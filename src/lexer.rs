@@ -52,6 +52,10 @@ impl Token {
     pub fn new(ttype: TokenType, ch: String) -> Token {
         Token { ttype: ttype, literal: ch }
     }
+
+    pub fn default() -> Token {
+        Token { ttype: TokenType::ILLEGAL, literal: "".to_string() }
+    }
 }
 
 impl Display for Token {
@@ -79,7 +83,7 @@ impl Lexer {
         lexer
     }
 
-    pub fn get_tokens(&mut self) -> Vec<Token> {
+    pub fn _get_tokens(&mut self) -> Vec<Token> {
         let mut tokens: Vec<Token> = Vec::new();
         let mut token: Token = Token::new(TokenType::ILLEGAL, "".to_string());
         while token.ttype != TokenType::EOF {
@@ -111,7 +115,7 @@ impl Lexer {
         }
     }
 
-    fn next_token(&mut self) -> Token {
+    pub fn next_token(&mut self) -> Token {
         let token: Token; // = Token::new(TokenType::ILLEGAL, "".to_string());
 
         self.skip_whitespace();
