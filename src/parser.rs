@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
-use crate::{ast::{BlockStatement, BooleanExpression, CallExpression, Expression, ExpressionStatement, FunctionLiteral, Identifier, IfExpression, InfixExpression, IntegerLiteral, LetStatement, PrefixExpression, Program, ReturnStatement, Statement}, lexer::{Lexer, Token, TokenType}};
+use crate::{ast::Node, lexer::{Lexer, Token, TokenType}};
 
-type PrefixParseFn = fn(parser: &mut Parser) -> Option<Box<dyn Expression>>;
-type InfixParseFn = fn(parser: &mut Parser, left: Option<Box<dyn Expression>>) -> Option<Box<dyn Expression>>;
+type PrefixParseFn = fn(parser: &mut Parser) -> Option<Box<Node>>;
+type InfixParseFn = fn(parser: &mut Parser, left: Option<Box<Node>>) -> Option<Box<Node>>;
 
 pub struct Parser {
     pub lexer: Lexer,
@@ -80,21 +80,21 @@ impl Parser {
         self.peak_token = self.lexer.next_token();
     }
 
-    pub fn parse_program(&mut self) -> Program {
-        let mut program = Program::new();
+    pub fn parse_program(&mut self) -> Node {
+        let mut statements = Vec::new();
 
         while self.cur_token.ttype != TokenType::EOF {
             let statement = self.parse_statement();
             if statement.is_some() {
-                program.statements.push(statement.unwrap());
+                statements.push(statement.unwrap());
             }
             self.next_token();
         }
 
-        program
+        Node::Program { statements }
     }
 
-    pub fn parse_statement(&mut self) -> Option<Box<dyn Statement>> {
+    pub fn parse_statement(&mut self) -> Option<Node> {
         match self.cur_token.ttype {
             TokenType::LET => return self.parse_let_statement(),
             TokenType::RETURN => return self.parse_return_statement(),
@@ -102,18 +102,17 @@ impl Parser {
         }
     }
 
-    pub fn parse_expression_statement(&mut self) -> Option<Box<dyn Statement>> {
-        let mut stmt = ExpressionStatement::new(self.cur_token.clone());
-        stmt.expression = self.parse_expression(Precedence::Lowest as i32);
+    pub fn parse_expression_statement(&mut self) -> Option<Node> {
+        let expression = self.parse_expression(Precedence::Lowest as i32);
 
         if self.peak_token.ttype == TokenType::SEMICOLON {
             self.next_token();
         }
 
-        Some(Box::new(stmt))
+        Some(Node::ExpressionStatement { expression })
     }
 
-    pub fn parse_expression(&mut self, precedence: i32) -> Option<Box<dyn Expression>> {
+    pub fn parse_expression(&mut self, precedence: i32) -> Option<Box<Node>> {
         let prefix = self.prefix_parse_fns.get(&self.cur_token.ttype);
         if prefix == None {
             self.no_prefix_parse_fn_error(self.cur_token.ttype);
@@ -136,27 +135,25 @@ impl Parser {
         return left_exp;
     }
 
-    pub fn parse_return_statement(&mut self) -> Option<Box<dyn Statement>> {
-        let mut stmt = ReturnStatement::new(self.cur_token.clone());
+    pub fn parse_return_statement(&mut self) -> Option<Node> {
         self.next_token();
-
         
-        stmt.return_value = self.parse_expression(Precedence::Lowest as i32);
+        let return_value = self.parse_expression(Precedence::Lowest as i32);
+        println!("Token: {}", self.cur_token);
 
-        if self.cur_token.ttype == TokenType::SEMICOLON {
+        if self.peak_token.ttype == TokenType::SEMICOLON {
             self.next_token();
         }
 
-        Some(Box::new(stmt))
+        Some(Node::ReturnStatement { return_value })
     }
 
-    pub fn parse_let_statement(&mut self) -> Option<Box<dyn Statement>> {
-        let mut stmt = LetStatement::new(self.cur_token.clone());
+    pub fn parse_let_statement(&mut self) -> Option<Node> {
         if !self.expect_peak(TokenType::IDENTIFIER) {
             return None;
         }
 
-        stmt.name = Identifier::new(self.cur_token.clone(), self.cur_token.clone().literal);
+        let name = Node::Identifier { value: self.cur_token.clone().literal };
 
         if !self.expect_peak(TokenType::ASSIGN) {
             return None;
@@ -164,13 +161,21 @@ impl Parser {
 
         self.next_token();
 
-        stmt.value = self.parse_expression(Precedence::Lowest as i32);
+        let value = self.parse_expression(Precedence::Lowest as i32);
 
         if self.peak_token.ttype == TokenType::SEMICOLON {
             self.next_token();
         }
 
-        return Some(Box::new(stmt))
+        Some(Node::LetStatement { name: Box::new(name) , value })
+    }
+
+    pub fn register_prefix(&mut self, ttype: TokenType, fun: PrefixParseFn) {
+        self.prefix_parse_fns.insert(ttype, fun);
+    }
+
+    pub fn register_infix(&mut self, ttype: TokenType, fun: InfixParseFn) {
+        self.infix_parse_fns.insert(ttype, fun);
     }
 
     pub fn expect_peak(&mut self, ttype: TokenType) -> bool {
@@ -201,41 +206,31 @@ impl Parser {
         self.errors.push(msg);
     }
 
-    pub fn register_prefix(&mut self, ttype: TokenType, fun: PrefixParseFn) {
-        self.prefix_parse_fns.insert(ttype, fun);
-    }
-
-    pub fn register_infix(&mut self, ttype: TokenType, fun: InfixParseFn) {
-        self.infix_parse_fns.insert(ttype, fun);
-    }
-
-    pub fn parse_identifier(parser: &mut Parser) -> Option<Box<dyn Expression>> {
+    pub fn parse_identifier(parser: &mut Parser) -> Option<Box<Node>> {
         let token = parser.cur_token.clone();
-        Some(Box::new(Identifier::new(token.clone(), token.literal)))
+        Some(Box::new(Node::Identifier { value: token.literal }))
     }
 
-    pub fn parse_integer_literal(parser: &mut Parser) -> Option<Box<dyn Expression>> {
-        let mut lit = IntegerLiteral::new(parser.cur_token.clone(), 0);
-
+    pub fn parse_integer_literal(parser: &mut Parser) -> Option<Box<Node>> {
         match parser.cur_token.literal.parse::<i32>() {
             Ok(n) => {
-                lit.value = n;
-                return Some(Box::new(lit))
+                return Some(Box::new(Node::IntegerLiteral { value: n }))
             },
             Err(e) => {
-                let msg = format!("Couldn't parse {} as integer, got error {}!", parser.cur_token.literal, e);
+                let msg = format!("Couldn't parse {} as integer, got error {}!", 
+                    parser.cur_token.literal, e);
                 parser.errors.push(msg);
                 return None;
             }
         }
     }
 
-    pub fn parse_boolean_expression(parser: &mut Parser) -> Option<Box<dyn Expression>> {
+    pub fn parse_boolean_expression(parser: &mut Parser) -> Option<Box<Node>> {
         let token = parser.cur_token.clone();
-        Some(Box::new(BooleanExpression::new(token.clone(), token.ttype == TokenType::TRUE)))
+        Some(Box::new(Node::BooleanExpression { value: token.ttype == TokenType::TRUE }))
     }
 
-    pub fn parse_grouped_expression(parser: &mut Parser) -> Option<Box<dyn Expression>> {
+    pub fn parse_grouped_expression(parser: &mut Parser) -> Option<Box<Node>> {
         parser.next_token();
         let exp = parser.parse_expression(Precedence::Lowest as i32);
         if !parser.expect_peak(TokenType::RPAREN) {
@@ -245,22 +240,41 @@ impl Parser {
         exp
     }
 
-    pub fn parse_prefix_expression(parser: &mut Parser) -> Option<Box<dyn Expression>> {
-        let mut exp = PrefixExpression::new(parser.cur_token.clone(), parser.cur_token.clone().literal);
+    pub fn parse_prefix_expression(parser: &mut Parser) -> Option<Box<Node>> {
+        let token = parser.cur_token.clone();
         parser.next_token();
-        exp.right = parser.parse_expression(Precedence::Prefix as i32);
+        let right = parser.parse_expression(Precedence::Prefix as i32);
 
-        Some(Box::new(exp))
+        Some(Box::new(Node::PrefixExpression { 
+            operator: token.literal, 
+            right: right 
+        }))
     }
 
-    pub fn parse_if_expression(parser: &mut Parser) -> Option<Box<dyn Expression>> {
-        let mut exp = IfExpression::new(parser.cur_token.clone());
+    pub fn parse_block_statement(&mut self) -> Option<Box<Node>> {
+        let mut statements = Vec::new();
+        self.next_token();
+        
+        while self.cur_token.ttype != TokenType::RBRACE && 
+            self.cur_token.ttype != TokenType::EOF {
+            let stmt = self.parse_statement();
+            if stmt.is_some() {
+                statements.push(stmt.unwrap());
+            }
+            self.next_token();
+            println!("Curr Token: {}", self.cur_token.clone());
+        }
+
+        Some(Box::new(Node::BlockStatement { statements }))
+    }
+
+    pub fn parse_if_expression(parser: &mut Parser) -> Option<Box<Node>> {
         if !parser.expect_peak(TokenType::LPAREN) {
             return None;
         }
 
         parser.next_token();
-        exp.condition = parser.parse_expression(Precedence::Lowest as i32);
+        let condition = parser.parse_expression(Precedence::Lowest as i32);
 
         if !parser.expect_peak(TokenType::RPAREN) {
             return None;
@@ -270,21 +284,22 @@ impl Parser {
             return None;
         }
 
-        exp.consequence = parser.parse_block_statement();
+        let consequence = parser.parse_block_statement();
 
+        let mut alternative = None;
         if parser.peak_token.ttype == TokenType::ELSE {
             parser.next_token();
             if !parser.expect_peak(TokenType::LBRACE) {
                 return None;
             }
 
-            exp.alternative = parser.parse_block_statement();
+            alternative = parser.parse_block_statement();
         }
 
-        Some(Box::new(exp))
+        Some(Box::new(Node::IfExpression { condition, consequence, alternative }))
     }
 
-    pub fn parse_function_parameters(&mut self) -> Vec<Identifier> {
+    pub fn parse_function_parameters(&mut self) -> Vec<Node> {
         let mut params = Vec::new();
         if self.peak_token.ttype == TokenType::RPAREN {
             self.next_token();
@@ -293,14 +308,16 @@ impl Parser {
 
         self.next_token();
 
-        let mut ident = Identifier::new(self.cur_token.clone(), self.cur_token.clone().literal);
-        params.push(ident);
+        params.push(Node::Identifier { 
+            value: self.cur_token.clone().literal 
+        });
 
         while self.peak_token.ttype == TokenType::COMMA {
             self.next_token();
             self.next_token();
-            ident = Identifier::new(self.cur_token.clone(), self.cur_token.clone().literal);
-            params.push(ident);
+            params.push(Node::Identifier { 
+                value: self.cur_token.clone().literal 
+            });
         }
 
         if !self.expect_peak(TokenType::RPAREN) {
@@ -310,51 +327,35 @@ impl Parser {
         params
     }
 
-    pub fn parse_function_literal(parser: &mut Parser) -> Option<Box<dyn Expression>> {
-        let mut lit = FunctionLiteral::new(parser.cur_token.clone());
+    pub fn parse_function_literal(parser: &mut Parser) -> Option<Box<Node>> {
         if !parser.expect_peak(TokenType::LPAREN) {
             return None;
         }
         
-        lit.parameters = parser.parse_function_parameters();
+        let parameters = parser.parse_function_parameters();
 
         if !parser.expect_peak(TokenType::LBRACE) {
             return None;
         }
 
-        lit.body = parser.parse_block_statement();
+        let body = parser.parse_block_statement();
 
-        Some(Box::new(lit))
+        Some(Box::new(Node::FunctionLiteral { parameters, body }))
     }
 
-    pub fn parse_block_statement(&mut self) -> Option<BlockStatement> {
-        let mut block = BlockStatement::new();
-        self.next_token();
-        
-        while self.cur_token.ttype != TokenType::RBRACE && self.cur_token.ttype != TokenType::EOF {
-            let stmt = self.parse_statement();
-            if stmt.is_some() {
-                block.statements.push(stmt.unwrap());
-            }
-            self.next_token();
-            println!("Curr Token: {}", self.cur_token.clone());
-        }
-
-        Some(block)
-    }
-
-    pub fn parse_infix_expression(parser: &mut Parser, left: Option<Box<dyn Expression>>) -> Option<Box<dyn Expression>> {
-        let mut exp = InfixExpression::new(parser.cur_token.clone(), parser.cur_token.literal.clone());
-        exp.left = left;
+    pub fn parse_infix_expression(parser: &mut Parser, left: Option<Box<Node>>) -> Option<Box<Node>> {
+        let token = parser.cur_token.clone();
 
         let precedence = parser.cur_precedence();
         parser.next_token();
-        exp.right = parser.parse_expression(precedence);
+        let right = parser.parse_expression(precedence);
 
-        Some(Box::new(exp))
+        Some(Box::new(Node::InfixExpression { 
+            left, operator: token.literal, right 
+        }))
     }
 
-    pub fn parse_call_arguments(&mut self) -> Vec<Box<dyn Expression>> {
+    pub fn parse_call_arguments(&mut self) -> Vec<Node> {
         let mut args = Vec::new();
         if self.peak_token.ttype == TokenType::RPAREN {
             self.next_token();
@@ -362,12 +363,12 @@ impl Parser {
         }
 
         self.next_token();
-        args.push(self.parse_expression(Precedence::Lowest as i32).unwrap());
+        args.push(*self.parse_expression(Precedence::Lowest as i32).unwrap());
 
         while self.peak_token.ttype == TokenType::COMMA {
             self.next_token();
             self.next_token();
-            args.push(self.parse_expression(Precedence::Lowest as i32).unwrap());
+            args.push(*self.parse_expression(Precedence::Lowest as i32).unwrap());
         }
 
         if !self.expect_peak(TokenType::RPAREN) {
@@ -377,11 +378,8 @@ impl Parser {
         args
     }
 
-    pub fn parse_call_expression(parser: &mut Parser, left: Option<Box<dyn Expression>>) -> Option<Box<dyn Expression>> {
-        let mut exp = CallExpression::new(parser.cur_token.clone());
-        exp.arguments = parser.parse_call_arguments();
-        exp.function = left;
-        Some(Box::new(exp))
+    pub fn parse_call_expression(parser: &mut Parser, left: Option<Box<Node>>) -> Option<Box<Node>> {
+        let arguments = parser.parse_call_arguments();
+        Some(Box::new(Node::CallExpression { function: left, arguments }))
     }        
-    
 }

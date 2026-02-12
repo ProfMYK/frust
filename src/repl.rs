@@ -1,6 +1,6 @@
 use std::io::{self, Write};
 
-use crate::{ast::Node, lexer::Lexer, parser::Parser};
+use crate::{lexer::Lexer, parser::Parser};
 
 pub fn start() {
     loop {
@@ -24,7 +24,7 @@ pub fn start() {
                     continue;
                 }
 
-                println!("{}", program.string());
+                println!("{}", program);
             }
         }
     }
