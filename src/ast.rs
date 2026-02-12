@@ -84,7 +84,7 @@ impl fmt::Display for Node {
                 let stats = indent(&statements.iter().map(|p| format!("{p}")).collect::<Vec<_>>().join("\n"));
                 msg = format!("{msg}{stats}");
 
-                write!(f, "{msg}")
+                write!(f, "{msg}\n)")
             }
         }
     }
