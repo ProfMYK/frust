@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
-use crate::{ast::{Expression, ExpressionStatement, Identifier, IntegerLiteral, LetStatement, PrefixExpression, Program, ReturnStatement, Statement}, lexer::{Lexer, Token, TokenType}};
+use crate::{ast::{BlockStatement, BooleanExpression, CallExpression, Expression, ExpressionStatement, FunctionLiteral, Identifier, IfExpression, InfixExpression, IntegerLiteral, LetStatement, PrefixExpression, Program, ReturnStatement, Statement}, lexer::{Lexer, Token, TokenType}};
 
 type PrefixParseFn = fn(parser: &mut Parser) -> Option<Box<dyn Expression>>;
-type InfixParseFn = fn(parser: &mut Parser, exp: Option<Box<dyn Expression>>) -> Option<Box<dyn Expression>>;
+type InfixParseFn = fn(parser: &mut Parser, left: Option<Box<dyn Expression>>) -> Option<Box<dyn Expression>>;
 
 pub struct Parser {
     pub lexer: Lexer,
@@ -35,6 +35,7 @@ fn get_precedence(ttype: TokenType) -> Precedence {
         TokenType::MINUS => return Precedence::Sum,
         TokenType::ASTERISK => return Precedence::Product,
         TokenType::SLASH => return Precedence::Product,
+        TokenType::LPAREN => return Precedence::Call,
         _ => Precedence::Lowest,
     }
 }
@@ -55,6 +56,11 @@ impl Parser {
         p.register_prefix(TokenType::INT, Parser::parse_integer_literal);
         p.register_prefix(TokenType::BANG, Parser::parse_prefix_expression);
         p.register_prefix(TokenType::MINUS, Parser::parse_prefix_expression);
+        p.register_prefix(TokenType::TRUE, Parser::parse_boolean_expression);
+        p.register_prefix(TokenType::FALSE, Parser::parse_boolean_expression);
+        p.register_prefix(TokenType::LPAREN, Parser::parse_grouped_expression);
+        p.register_prefix(TokenType::IF, Parser::parse_if_expression);
+        p.register_prefix(TokenType::FUNCTION, Parser::parse_function_literal);
 
         p.register_infix(TokenType::EQ, Parser::parse_infix_expression); 
         p.register_infix(TokenType::NOTEQ, Parser::parse_infix_expression); 
@@ -64,6 +70,7 @@ impl Parser {
         p.register_infix(TokenType::MINUS, Parser::parse_infix_expression); 
         p.register_infix(TokenType::ASTERISK, Parser::parse_infix_expression); 
         p.register_infix(TokenType::SLASH, Parser::parse_infix_expression); 
+        p.register_infix(TokenType::LPAREN, Parser::parse_call_expression); 
 
         p
     }
@@ -99,8 +106,6 @@ impl Parser {
         let mut stmt = ExpressionStatement::new(self.cur_token.clone());
         stmt.expression = self.parse_expression(Precedence::Lowest as i32);
 
-        println!("Current Token = {}", self.cur_token);
-
         if self.peak_token.ttype == TokenType::SEMICOLON {
             self.next_token();
         }
@@ -108,26 +113,37 @@ impl Parser {
         Some(Box::new(stmt))
     }
 
-    pub fn parse_expression(&mut self, _precedence: i32) -> Option<Box<dyn Expression>> {
+    pub fn parse_expression(&mut self, precedence: i32) -> Option<Box<dyn Expression>> {
         let prefix = self.prefix_parse_fns.get(&self.cur_token.ttype);
         if prefix == None {
             self.no_prefix_parse_fn_error(self.cur_token.ttype);
             return None;
         }
 
-        let left_exp = prefix.unwrap()(self);
+        let mut left_exp = prefix.unwrap()(self);
+
+        while self.peak_token.ttype != TokenType::SEMICOLON && precedence < self.peak_precedence() {
+            let infix = self.infix_parse_fns.get(&self.peak_token.ttype).cloned();
+            if infix.is_none() {
+                return left_exp;
+            }
+
+            self.next_token();
+
+            left_exp = infix.unwrap()(self, left_exp);
+        }
 
         return left_exp;
     }
 
     pub fn parse_return_statement(&mut self) -> Option<Box<dyn Statement>> {
-        let stmt = ReturnStatement::new(self.cur_token.clone());
+        let mut stmt = ReturnStatement::new(self.cur_token.clone());
         self.next_token();
 
         
-        // todo!("Parse the return value expressions!");
+        stmt.return_value = self.parse_expression(Precedence::Lowest as i32);
 
-        while self.cur_token.ttype != TokenType::SEMICOLON {
+        if self.cur_token.ttype == TokenType::SEMICOLON {
             self.next_token();
         }
 
@@ -146,9 +162,11 @@ impl Parser {
             return None;
         }
 
-        // todo!("Parse the expressions!");
+        self.next_token();
 
-        while self.cur_token.ttype != TokenType::SEMICOLON {
+        stmt.value = self.parse_expression(Precedence::Lowest as i32);
+
+        if self.peak_token.ttype == TokenType::SEMICOLON {
             self.next_token();
         }
 
@@ -179,7 +197,7 @@ impl Parser {
     }
 
     pub fn no_prefix_parse_fn_error(&mut self, ttype: TokenType) {
-        let msg = format!("No prefix parse function for {:?} found!", ttype);
+        let msg = format!("No prefix parse function for {:?} found at {}!", ttype, self.cur_token);
         self.errors.push(msg);
     }
 
@@ -212,6 +230,21 @@ impl Parser {
         }
     }
 
+    pub fn parse_boolean_expression(parser: &mut Parser) -> Option<Box<dyn Expression>> {
+        let token = parser.cur_token.clone();
+        Some(Box::new(BooleanExpression::new(token.clone(), token.ttype == TokenType::TRUE)))
+    }
+
+    pub fn parse_grouped_expression(parser: &mut Parser) -> Option<Box<dyn Expression>> {
+        parser.next_token();
+        let exp = parser.parse_expression(Precedence::Lowest as i32);
+        if !parser.expect_peak(TokenType::RPAREN) {
+            return None;
+        }
+
+        exp
+    }
+
     pub fn parse_prefix_expression(parser: &mut Parser) -> Option<Box<dyn Expression>> {
         let mut exp = PrefixExpression::new(parser.cur_token.clone(), parser.cur_token.clone().literal);
         parser.next_token();
@@ -220,8 +253,135 @@ impl Parser {
         Some(Box::new(exp))
     }
 
-    pub fn parse_infix_expression(parser: &mut Parser, exp: Option<Box<dyn Expression>>) -> Option<Box<dyn Expression>> {
-        None
+    pub fn parse_if_expression(parser: &mut Parser) -> Option<Box<dyn Expression>> {
+        let mut exp = IfExpression::new(parser.cur_token.clone());
+        if !parser.expect_peak(TokenType::LPAREN) {
+            return None;
+        }
+
+        parser.next_token();
+        exp.condition = parser.parse_expression(Precedence::Lowest as i32);
+
+        if !parser.expect_peak(TokenType::RPAREN) {
+            return None;
+        }
+
+        if !parser.expect_peak(TokenType::LBRACE) {
+            return None;
+        }
+
+        exp.consequence = parser.parse_block_statement();
+
+        if parser.peak_token.ttype == TokenType::ELSE {
+            parser.next_token();
+            if !parser.expect_peak(TokenType::LBRACE) {
+                return None;
+            }
+
+            exp.alternative = parser.parse_block_statement();
+        }
+
+        Some(Box::new(exp))
     }
+
+    pub fn parse_function_parameters(&mut self) -> Vec<Identifier> {
+        let mut params = Vec::new();
+        if self.peak_token.ttype == TokenType::RPAREN {
+            self.next_token();
+            return params;
+        }
+
+        self.next_token();
+
+        let mut ident = Identifier::new(self.cur_token.clone(), self.cur_token.clone().literal);
+        params.push(ident);
+
+        while self.peak_token.ttype == TokenType::COMMA {
+            self.next_token();
+            self.next_token();
+            ident = Identifier::new(self.cur_token.clone(), self.cur_token.clone().literal);
+            params.push(ident);
+        }
+
+        if !self.expect_peak(TokenType::RPAREN) {
+            return Vec::new(); // Return None
+        }
+
+        params
+    }
+
+    pub fn parse_function_literal(parser: &mut Parser) -> Option<Box<dyn Expression>> {
+        let mut lit = FunctionLiteral::new(parser.cur_token.clone());
+        if !parser.expect_peak(TokenType::LPAREN) {
+            return None;
+        }
+        
+        lit.parameters = parser.parse_function_parameters();
+
+        if !parser.expect_peak(TokenType::LBRACE) {
+            return None;
+        }
+
+        lit.body = parser.parse_block_statement();
+
+        Some(Box::new(lit))
+    }
+
+    pub fn parse_block_statement(&mut self) -> Option<BlockStatement> {
+        let mut block = BlockStatement::new();
+        self.next_token();
+        
+        while self.cur_token.ttype != TokenType::RBRACE && self.cur_token.ttype != TokenType::EOF {
+            let stmt = self.parse_statement();
+            if stmt.is_some() {
+                block.statements.push(stmt.unwrap());
+            }
+            self.next_token();
+            println!("Curr Token: {}", self.cur_token.clone());
+        }
+
+        Some(block)
+    }
+
+    pub fn parse_infix_expression(parser: &mut Parser, left: Option<Box<dyn Expression>>) -> Option<Box<dyn Expression>> {
+        let mut exp = InfixExpression::new(parser.cur_token.clone(), parser.cur_token.literal.clone());
+        exp.left = left;
+
+        let precedence = parser.cur_precedence();
+        parser.next_token();
+        exp.right = parser.parse_expression(precedence);
+
+        Some(Box::new(exp))
+    }
+
+    pub fn parse_call_arguments(&mut self) -> Vec<Box<dyn Expression>> {
+        let mut args = Vec::new();
+        if self.peak_token.ttype == TokenType::RPAREN {
+            self.next_token();
+            return args;
+        }
+
+        self.next_token();
+        args.push(self.parse_expression(Precedence::Lowest as i32).unwrap());
+
+        while self.peak_token.ttype == TokenType::COMMA {
+            self.next_token();
+            self.next_token();
+            args.push(self.parse_expression(Precedence::Lowest as i32).unwrap());
+        }
+
+        if !self.expect_peak(TokenType::RPAREN) {
+            return Vec::new();
+        }
+
+        args
+    }
+
+    pub fn parse_call_expression(parser: &mut Parser, left: Option<Box<dyn Expression>>) -> Option<Box<dyn Expression>> {
+        let mut exp = CallExpression::new(parser.cur_token.clone());
+        exp.arguments = parser.parse_call_arguments();
+        exp.function = left;
+        Some(Box::new(exp))
+    }        
     
 }

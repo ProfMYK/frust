@@ -1,10 +1,29 @@
-use std::any::Any;
+use std::{any::Any};
 
-use crate::Token;
+use crate::{Token};
+
+#[derive(Hash, PartialEq, Eq, Debug, Clone, Copy)]
+pub enum NodeType {
+    BlockStatement,
+    Identifier,
+    FunctionLiteral,
+    CallExpression,
+    IntegerLiteral,
+    BooleanExpression,
+    PrefixExpression,
+    InfixExpression,
+    IfExpression,
+    ExpressionStatement,
+    LetStatement,
+    ReturnStatement,
+    Program,
+}
 
 pub trait Node {
     fn token_literal(&self) -> String;
     fn string(&self) -> String;
+    fn ntype(&self) -> NodeType;
+    fn as_any(&self) -> &dyn Any;
 }
 
 pub trait Statement: Node {
@@ -14,6 +33,49 @@ pub trait Statement: Node {
 
 pub trait Expression: Node {
     fn expression_node(&self) {}
+}
+
+pub struct BlockStatement {
+    pub token: Token, // TokenType::LBRACET
+    pub statements: Vec<Box<dyn Statement>>
+}
+
+impl Node for BlockStatement {
+    fn token_literal(&self) -> String {
+        self.token.literal.to_string()
+    }
+    fn string(&self) -> String {
+        let mut msg = "".to_string();
+        for (i, stmt) in self.statements.iter().map(|s| s.string()).enumerate() {
+            if i != self.statements.len() - 1 {
+                msg = format!("{msg}\n  {}", stmt);
+            } else {
+                msg = format!("{msg}{}", stmt);
+            }
+        }
+        msg = format!("{msg}\n");
+
+        msg
+    }
+    fn ntype(&self) -> NodeType {
+        NodeType::BlockStatement
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+impl Statement for BlockStatement {
+    fn statement_node(&self) {}
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+impl BlockStatement {
+    pub fn new() -> BlockStatement {
+        BlockStatement { token: Token::default(), statements: Vec::new() }
+    }
 }
 
 pub struct Identifier {
@@ -27,6 +89,12 @@ impl Node for Identifier {
     }
     fn string(&self) -> String {
         self.value.clone()
+    }
+    fn ntype(&self) -> NodeType {
+        NodeType::Identifier
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 
@@ -43,6 +111,78 @@ impl Identifier {
     }
 }
 
+pub struct FunctionLiteral {
+    pub token: Token,
+    pub parameters: Vec<Identifier>,
+    pub body: Option<BlockStatement>
+}
+
+impl Node for FunctionLiteral {
+    fn token_literal(&self) -> String {
+        self.token.literal.to_string()
+    }
+    fn string(&self) -> String {
+        let params: String = self.parameters.iter().map(|p| p.string()).collect::<Vec<_>>().join(", ");
+        if let Some(ref body) = self.body {
+            return format!("{}({}) {{{}}}", self.token_literal(), params, body.string());
+        }
+
+        "".to_string()
+    }
+    fn ntype(&self) -> NodeType {
+        NodeType::FunctionLiteral
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+impl Expression for FunctionLiteral {
+    fn expression_node(&self) {}
+}
+
+impl FunctionLiteral {
+    pub fn new(token: Token) -> FunctionLiteral {
+        FunctionLiteral { token, parameters: Vec::new(), body: None }
+    }
+}
+
+pub struct CallExpression {
+    pub token: Token,
+    pub function: Option<Box<dyn Expression>>,
+    pub arguments: Vec<Box<dyn Expression>>,
+}
+
+impl Node for CallExpression {
+    fn token_literal(&self) -> String {
+        self.token.literal.to_string()
+    }
+    fn string(&self) -> String {
+        let args: String = self.arguments.iter().map(|p| p.string()).collect::<Vec<_>>().join(", ");
+        if let Some(ref function) = self.function {
+            return format!("{}({})", function.string(), args);
+        }
+
+        "".to_string()
+    }
+    fn ntype(&self) -> NodeType {
+        NodeType::CallExpression
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+impl Expression for CallExpression {
+    fn expression_node(&self) {}
+}
+
+impl CallExpression {
+    pub fn new(token: Token) -> CallExpression {
+        CallExpression { token, function: None, arguments: Vec::new() }
+    }
+}
+
 pub struct IntegerLiteral {
     pub token: Token,
     pub value: i32,
@@ -55,6 +195,12 @@ impl Node for IntegerLiteral {
     fn string(&self) -> String {
         self.token.literal.clone()
     }
+    fn ntype(&self) -> NodeType {
+        NodeType::IntegerLiteral
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
 }
 
 impl Expression for IntegerLiteral {
@@ -64,6 +210,36 @@ impl Expression for IntegerLiteral {
 impl IntegerLiteral {
     pub fn new(token: Token, value: i32) -> IntegerLiteral {
         IntegerLiteral { token, value }
+    }
+}
+
+pub struct BooleanExpression {
+    pub token: Token,
+    pub value: bool,
+}
+
+impl Node for BooleanExpression {
+    fn token_literal(&self) -> String {
+        self.token.literal.clone()
+    }
+    fn string(&self) -> String {
+        self.token.literal.clone()
+    }
+    fn ntype(&self) -> NodeType {
+        NodeType::BooleanExpression
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+impl Expression for BooleanExpression {
+    fn expression_node(&self) {}
+}
+
+impl BooleanExpression {
+    pub fn new(token: Token, value: bool) -> BooleanExpression {
+        BooleanExpression { token, value }
     }
 }
 
@@ -83,6 +259,12 @@ impl Node for PrefixExpression {
         }
 
         "".to_string()
+    }
+    fn ntype(&self) -> NodeType {
+        NodeType::PrefixExpression
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 
@@ -114,6 +296,12 @@ impl Node for InfixExpression {
 
         "".to_string()
     }
+    fn ntype(&self) -> NodeType {
+        NodeType::InfixExpression
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
 }
 
 impl Expression for InfixExpression {
@@ -123,6 +311,49 @@ impl Expression for InfixExpression {
 impl InfixExpression {
     pub fn new(token: Token, operator: String) -> InfixExpression {
         InfixExpression { token, left:None, operator, right: None }
+    }
+}
+
+pub struct IfExpression {
+    pub token: Token,
+    pub condition: Option<Box<dyn Expression>>,
+    pub consequence: Option<BlockStatement>,
+    pub alternative: Option<BlockStatement>,
+}
+
+impl Node for IfExpression {
+    fn token_literal(&self) -> String {
+        self.token.literal.clone()
+    }
+
+    fn string(&self) -> String {
+        if let Some(ref cond) = self.condition && let Some(ref cons) = self.consequence {
+            let mut msg = format!("if ({}) {{{}}}", cond.string(), cons.string());
+            if let Some(ref alt) = self.alternative {
+                msg += &format!(" else {{{}}}", alt.string());
+                return msg.to_string();
+            }
+
+            return msg;
+        }
+
+        "".to_string()
+    }
+    fn ntype(&self) -> NodeType {
+        NodeType::IfExpression
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+impl Expression for IfExpression {
+    fn expression_node(&self) {}
+}
+
+impl IfExpression {
+    pub fn new(token: Token) -> IfExpression {
+        IfExpression { token, condition: None, consequence: None, alternative: None }
     }
 }
 
@@ -155,6 +386,12 @@ impl Node for ExpressionStatement {
         }
         "".to_string()
     }
+    fn ntype(&self) -> NodeType {
+        NodeType::ExpressionStatement
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
 }
 
 pub struct LetStatement {
@@ -180,6 +417,12 @@ impl Node for LetStatement {
             msg = format!("{msg}{}", expr.string());
         }
         return msg + ";";
+    }
+    fn ntype(&self) -> NodeType {
+        NodeType::LetStatement
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 impl LetStatement {
@@ -213,7 +456,14 @@ impl Node for ReturnStatement {
 
         return msg + ";";
     }
+    fn ntype(&self) -> NodeType {
+        NodeType::ReturnStatement
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
 }
+
 impl ReturnStatement {
     pub fn new(token: Token) -> ReturnStatement {
         ReturnStatement { token, return_value: None }
@@ -241,6 +491,12 @@ impl Node for Program {
         }
 
         msg
+    }
+    fn ntype(&self) -> NodeType {
+        NodeType::Program
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 

@@ -1,39 +1,43 @@
 mod lexer;
 mod ast;
 mod parser;
+mod repl;
+mod evaluator;
 
 use lexer::*;
-use ast::*;
-use parser::*;
+// use ast::*;
+// use parser::*;
+use repl::*;
 
 fn main() {
-    // let input = "let x = 10;
-    //              let y = 15;
-    //              let foobar = 838383;
-    //              return 5;
-    //              return add(1, 3);
-    //              let myVar = anotherVar;";
-    let input = "5 + 5;
-                 5 - 5;
-                 5 * 5;
-                 5 / 5;
-                 5 > 5;
-                 5 < 5;
-                 5 == 5;
-                 5 != 5;";
-    
-    let lex = Lexer::new(input.to_string());
-
-    let mut parser = Parser::new(lex);
-    
-    let program = parser.parse_program();
-
-    println!("{}", program.string());
-    println!("Statements count: {}", program.statements.len());
-
-    for msg in parser.errors {
-        println!("ERROR: {}", msg);
-    }
+    // let input = "
+    //             if (aminake == yarrak) {
+    //                 return x / y * (z * c);
+    //             let a = 20;
+    //             }
+    //             let a = 20;
+    //             let a = 20;
+    //             ";
+    //
+    // let lex = Lexer::new(input.to_string());
+    //
+    // let mut parser = Parser::new(lex);
+    //
+    // let program = parser.parse_program();
+    //
+    // println!("{}\n", program.string());
+    // let mut new_lex = Lexer::new(input.to_string());
+    // let tokens = new_lex._get_tokens();
+    // for (i, token) in tokens.iter().enumerate() {
+    //     println!("{}: {}", i, token.literal);
+    // }
+    // println!("\nStatements count: {}", program.statements.len());
+    //
+    // for msg in parser.errors {
+    //     println!("ERROR: {}", msg);
+    // }
+    //
+    start();
 
     // loop {
     //     print!("> ");

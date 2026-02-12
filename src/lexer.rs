@@ -64,6 +64,7 @@ impl Display for Token {
     }
 }
 
+#[derive(Clone)]
 pub struct Lexer {
     input: String,
     position: usize,
@@ -162,7 +163,6 @@ impl Lexer {
                 token = Token::new(TokenType::INT, number);
             },
             _ => {
-                println!("Code of ILLEGAL: {}", {self.ch as u8});
                 token = Token::new(TokenType::ILLEGAL, (self.ch as char).to_string());
             }
         }
@@ -173,7 +173,7 @@ impl Lexer {
 
     fn read_identifier(&mut self) -> String {
         let position = self.position;
-        while self.ch.is_ascii_alphabetic() {
+        while self.ch.is_ascii_alphabetic() || self.ch == b'_' {
             self.read_char();
         }
 
