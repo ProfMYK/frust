@@ -43,9 +43,98 @@ impl Identifier {
     }
 }
 
+pub struct IntegerLiteral {
+    pub token: Token,
+    pub value: i32,
+}
+
+impl Node for IntegerLiteral {
+    fn token_literal(&self) -> String {
+        self.token.literal.clone()
+    }
+    fn string(&self) -> String {
+        self.token.literal.clone()
+    }
+}
+
+impl Expression for IntegerLiteral {
+    fn expression_node(&self) {}
+}
+
+impl IntegerLiteral {
+    pub fn new(token: Token, value: i32) -> IntegerLiteral {
+        IntegerLiteral { token, value }
+    }
+}
+
+pub struct PrefixExpression {
+    pub token: Token,
+    pub operator: String,
+    pub right: Option<Box<dyn Expression>>,
+}
+
+impl Node for PrefixExpression {
+    fn token_literal(&self) -> String {
+        self.token.literal.clone()
+    }
+    fn string(&self) -> String {
+        if let Some(ref expres) = self.right {
+            return format!("({}{})", self.operator, expres.string());
+        }
+
+        "".to_string()
+    }
+}
+
+impl Expression for PrefixExpression {
+    fn expression_node(&self) {}
+}
+
+impl PrefixExpression {
+    pub fn new(token: Token, operator: String) -> PrefixExpression {
+        PrefixExpression { token, operator, right: None }
+    }
+}
+
+pub struct InfixExpression {
+    pub token: Token,
+    pub left: Option<Box<dyn Expression>>,
+    pub operator: String,
+    pub right: Option<Box<dyn Expression>>,
+}
+
+impl Node for InfixExpression {
+    fn token_literal(&self) -> String {
+        self.token.literal.clone()
+    }
+    fn string(&self) -> String {
+        if let Some(ref right) = self.right && let Some(ref left) = self.left {
+            return format!("({} {} {})", left.string(), self.operator, right.string());
+        }
+
+        "".to_string()
+    }
+}
+
+impl Expression for InfixExpression {
+    fn expression_node(&self) {}
+}
+
+impl InfixExpression {
+    pub fn new(token: Token, operator: String) -> InfixExpression {
+        InfixExpression { token, left:None, operator, right: None }
+    }
+}
+
 pub struct ExpressionStatement {
     pub token: Token,
     pub expression: Option<Box<dyn Expression>>,
+}
+
+impl ExpressionStatement {
+    pub fn new(cur_token: Token) -> ExpressionStatement {
+        ExpressionStatement { token: cur_token, expression: None }
+    }
 }
 
 impl Statement for ExpressionStatement {

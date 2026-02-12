@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-#[derive(PartialEq, Eq, Debug, Clone, Copy)]
+#[derive(Hash, PartialEq, Eq, Debug, Clone, Copy)]
 pub enum TokenType {
     ILLEGAL,
     EOF,
@@ -162,7 +162,8 @@ impl Lexer {
                 token = Token::new(TokenType::INT, number);
             },
             _ => {
-                token = Token::new(TokenType::ILLEGAL, (self.ch as char).to_string())
+                println!("Code of ILLEGAL: {}", {self.ch as u8});
+                token = Token::new(TokenType::ILLEGAL, (self.ch as char).to_string());
             }
         }
 
@@ -194,7 +195,7 @@ impl Lexer {
     }
 
     fn skip_whitespace(&mut self) {
-        if self.ch.is_ascii_whitespace() {
+        while self.ch.is_ascii_whitespace() {
             self.read_char();
         }
     }
