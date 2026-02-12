@@ -17,7 +17,7 @@ pub enum Node {
     Program {statements: Vec<Node>}
 }
 
-fn indent(s: &str) -> String {
+pub fn indent(s: &str) -> String {
     s.lines()
         .map(|line| format!("  {}", line)) // Add 2 spaces to each line
         .collect::<Vec<_>>()

@@ -139,7 +139,6 @@ impl Parser {
         self.next_token();
         
         let return_value = self.parse_expression(Precedence::Lowest as i32);
-        println!("Token: {}", self.cur_token);
 
         if self.peak_token.ttype == TokenType::SEMICOLON {
             self.next_token();
@@ -262,7 +261,6 @@ impl Parser {
                 statements.push(stmt.unwrap());
             }
             self.next_token();
-            println!("Curr Token: {}", self.cur_token.clone());
         }
 
         Some(Box::new(Node::BlockStatement { statements }))
