@@ -7,6 +7,7 @@ pub enum Node {
     FunctionLiteral {parameters: Vec<Node>, body: Option<Box<Node>>},
     CallExpression {function: Option<Box<Node>>, arguments: Vec<Node>},
     IntegerLiteral {value: i32},
+    StringLiteral {value: String},
     BooleanExpression {value: bool},
     PrefixExpression {operator: String, right: Option<Box<Node>>},
     InfixExpression {left: Option<Box<Node>>, operator: String, right: Option<Box<Node>>},
@@ -86,6 +87,7 @@ impl fmt::Display for Node {
 
                 write!(f, "{msg}\n)")
             }
+            Node::StringLiteral { value } => write!(f, "(String: \"{}\")", value)
         }
     }
 }

@@ -5,9 +5,12 @@ pub enum TokenType {
     ILLEGAL,
     EOF,
 
-    // Indetifiers + value
+    // Indetifiers
     IDENTIFIER,
+
+    // DATA TYPES
     INT,
+    STRING,
 
     // Operators
     ASSIGN,    // =
@@ -152,6 +155,7 @@ impl Lexer {
             b')' => token = Token::new(TokenType::RPAREN, (self.ch as char).to_string()),
             b'{' => token = Token::new(TokenType::LBRACE, (self.ch as char).to_string()),
             b'}' => token = Token::new(TokenType::RBRACE, (self.ch as char).to_string()),
+            b'"' => token = Token::new(TokenType::STRING, self.read_string()),
             0 => token = Token::new(TokenType::EOF, "".to_string()),
             ch if ch.is_ascii_alphabetic() || ch == b'_' => {
                 let ident = self.read_identifier();
@@ -178,6 +182,16 @@ impl Lexer {
         }
 
         self.input.get(position..self.position).expect("Well something went horribly wrong, oops!").to_string()
+    }
+
+    fn read_string(&mut self) -> String {
+        let pos = self.position + 1;
+        self.read_char();
+        while self.ch != b'"' && self.ch != 0 {
+            self.read_char();
+        }
+
+        self.input.get(pos..self.position).expect("Well something went horribly wrong, oops!").to_string()
     }
 
     fn read_number(&mut self) -> String {

@@ -1,9 +1,9 @@
-use std::io::{self, Write};
+use std::{io::{self, Write}};
 
 use crate::{evaluator::{Environmet, eval}, lexer::Lexer, parser::Parser};
 
 pub fn start() {
-    let mut env = Environmet::new();
+    let env = Environmet::new();
     loop {
         print!("> ");
         io::stdout().flush().unwrap();
@@ -25,7 +25,7 @@ pub fn start() {
                     continue;
                 }
 
-                let evaluated = eval(program, &mut env);
+                let evaluated = eval(program, env.clone());
                 println!("{}", evaluated);
             }
         }

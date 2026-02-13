@@ -61,6 +61,7 @@ impl Parser {
         p.register_prefix(TokenType::LPAREN, Parser::parse_grouped_expression);
         p.register_prefix(TokenType::IF, Parser::parse_if_expression);
         p.register_prefix(TokenType::FUNCTION, Parser::parse_function_literal);
+        p.register_prefix(TokenType::STRING, Parser::parse_string_literal);
 
         p.register_infix(TokenType::EQ, Parser::parse_infix_expression); 
         p.register_infix(TokenType::NOTEQ, Parser::parse_infix_expression); 
@@ -339,6 +340,10 @@ impl Parser {
         let body = parser.parse_block_statement();
 
         Some(Box::new(Node::FunctionLiteral { parameters, body }))
+    }
+
+    pub fn parse_string_literal(parser: &mut Parser) -> Option<Box<Node>> {
+        Some(Box::new(Node::StringLiteral { value: parser.cur_token.literal.clone() }))
     }
 
     pub fn parse_infix_expression(parser: &mut Parser, left: Option<Box<Node>>) -> Option<Box<Node>> {
