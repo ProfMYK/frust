@@ -2,8 +2,14 @@ use std::{io::{self, Write}};
 
 use crate::{evaluator::{Environmet, eval}, lexer::Lexer, parser::Parser};
 
+enum ReplMode {
+    Evaluate,
+    Parse,
+}
+
 pub fn start() {
     let env = Environmet::new();
+    let mut mode = ReplMode::Evaluate;
     loop {
         print!("> ");
         io::stdout().flush().unwrap();
@@ -15,6 +21,18 @@ pub fn start() {
         match command {
             "exit" | "quit" => break,
             "" => continue,
+            "mode" => {
+                mode = match mode {
+                    ReplMode::Parse => {
+                        println!("INFO: Repl mode changed to evaluate!");
+                        ReplMode::Evaluate
+                    }
+                    ReplMode::Evaluate => {
+                        println!("INFO: Repl mode changed to parse!");
+                        ReplMode::Parse
+                    }
+                }
+            },
             _ => {
                 let lexer = Lexer::new(command.to_string());
                 let mut parser = Parser::new(lexer);
@@ -25,8 +43,15 @@ pub fn start() {
                     continue;
                 }
 
-                let evaluated = eval(program, env.clone());
-                println!("{}", evaluated);
+                match mode {
+                    ReplMode::Evaluate => {
+                        let evaluated = eval(program, env.clone());
+                        println!("{}", evaluated);
+                    } 
+                    ReplMode::Parse => {
+                        println!("{}", program);
+                    }
+                }
             }
         }
     }

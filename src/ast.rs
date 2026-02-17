@@ -8,12 +8,16 @@ pub enum Node {
     CallExpression {function: Option<Box<Node>>, arguments: Vec<Node>},
     IntegerLiteral {value: i32},
     StringLiteral {value: String},
+    ArrayLiteral {elements: Vec<Node>},
+    IndexExpression {left: Option<Box<Node>>, right: Option<Box<Node>>},
     BooleanExpression {value: bool},
     PrefixExpression {operator: String, right: Option<Box<Node>>},
     InfixExpression {left: Option<Box<Node>>, operator: String, right: Option<Box<Node>>},
     IfExpression {condition: Option<Box<Node>>, consequence: Option<Box<Node>>, alternative: Option<Box<Node>>},
+    WhileExpession {condition: Option<Box<Node>>, body: Option<Box<Node>>},
     ExpressionStatement {expression: Option<Box<Node>>},
     LetStatement {name: Box<Node>, value: Option<Box<Node>>},
+    AssignStatement {name: Box<Node>, operator: String, value: Option<Box<Node>>},
     ReturnStatement {return_value: Option<Box<Node>>},
     Program {statements: Vec<Node>}
 }
@@ -38,7 +42,7 @@ impl fmt::Display for Node {
                 }
                 msg += &format!("{}\n", indent(&format!("{}", statements[statements.len() - 1])));
 
-                write!(f, "{msg})")
+                write!(f, "{msg})\n")
             },
             Node::FunctionLiteral { parameters, body } => {
                 // let mut msg = format!("fun(");
@@ -71,6 +75,10 @@ impl fmt::Display for Node {
                     return write!(f, "if ({}) {{ \n{} }}", condition.clone().unwrap(), con);
                 }
             },
+            Node::WhileExpession { condition, body } => {
+                let bod = indent(&format!("{}", body.clone().unwrap()));
+                return write!(f, "while ({}) {{ \n{} }}", condition.clone().unwrap(), bod);
+            },
             Node::ExpressionStatement { expression } => { 
                 if let Some(ref exp) = expression.clone() {
                     return write!(f, "{}", exp);
@@ -79,6 +87,7 @@ impl fmt::Display for Node {
                 return write!(f, "");
             }
             Node::LetStatement { name, value } => write!(f, "let {name} = {};", value.clone().unwrap()),
+            Node::AssignStatement { name, operator, value } => write!(f, "{name} {operator} {};", value.clone().unwrap()),
             Node::ReturnStatement { return_value } => write!(f, "return {};", return_value.clone().unwrap()),
             Node::Program { statements } => {
                 let mut msg = format!("(Program\n");
@@ -87,7 +96,17 @@ impl fmt::Display for Node {
 
                 write!(f, "{msg}\n)")
             }
-            Node::StringLiteral { value } => write!(f, "(String: \"{}\")", value)
+            Node::StringLiteral { value } => write!(f, "(String: \"{}\")", value),
+            Node::ArrayLiteral { elements } => {
+                let mut msg = format!("(Array: ");
+                let stats = indent(&elements.iter().map(|p| format!("{p}")).collect::<Vec<_>>().join(", "));
+                msg = format!("{msg}[{stats}]");
+
+                write!(f, "{msg})")
+            }
+            Node::IndexExpression { left, right } => {
+                write!(f, "(Index Expression: {}[{}])", left.clone().unwrap(), right.clone().unwrap())
+            }
         }
     }
 }
