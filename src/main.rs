@@ -4,37 +4,51 @@ mod parser;
 mod repl;
 mod evaluator;
 
-use repl::*;
-fn main() {
-    // let input = "
-    //             let one = fun() {
-    //                 return 1;
-    //             }
-    //             let a = 50 + 40 * 20 + one();
-    //             let b = 40;
-    //             let max = fun(x, y) {
-    //                 if (x > y) {
-    //                     return x;
-    //                 } else {
-    //                     return y;
-    //                 }
-    //             }
-    //
-    //             print(max(a, b));
-    //             ";
+use std::{env, fs, process::exit};
 
-    // let lex = Lexer::new(input.to_string());
-    //
-    // let mut parser = Parser::new(lex);
-    //
-    // let program = parser.parse_program();
-    //
-    // println!("{}\n", program);
-    // // println!("\nStatements count: {}", program.statements.len());
-    //
-    // for msg in parser.errors {
-    //     println!("ERROR: {}", msg);
-    // }
-    //
-    start();
+use repl::*;
+
+use crate::{evaluator::{Environmet, eval}, lexer::Lexer, parser::Parser};
+fn main() {
+    let args: Vec<String> = env::args().skip(1).collect();
+
+    let command = args.get(0);
+
+    match command {
+        Some(com) => {
+            match com.as_str() {
+                "repl" => start(),
+                "com" => {
+                    let file = args.get(1);
+                    match file {
+                        Some(file_pos) => {
+                            let content = fs::read_to_string(file_pos);
+                            if content.is_err() {
+                                println!("File openning error: {}", content.err().unwrap());
+                            } else {
+                                let code = content.unwrap();
+                                let env = Environmet::new();
+                                let lexer = Lexer::new(code);
+                                let mut parser = Parser::new(lexer);
+
+                                let program = parser.parse_program();
+                                if parser.errors.len() != 0 {
+                                    print_errors(parser.errors);
+                                    exit(1);
+                                }
+                            
+                                let evaluated = eval(program, env.clone());
+                                if !matches!(evaluated, evaluator::Object::Null) {
+                                    println!("{}", evaluated);
+                                }
+                            }
+                        },
+                        None => println!("No File Provided: com \"file_location\""),
+                    }
+                },
+                _ => println!("COMMAND NOT FOUND: repl | com"),
+            }
+        }
+        None => println!("NO COMMAND PROVIDED: repl | com"),
+    }
 }

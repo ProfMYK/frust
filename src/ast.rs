@@ -1,12 +1,13 @@
-use std::fmt;
+use std::fmt::{self};
 
-#[derive(Hash, PartialEq, Eq, Debug, Clone)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum Node {
     BlockStatement {statements: Vec<Node>},
     Identifier {value: String},
     FunctionLiteral {parameters: Vec<Node>, body: Option<Box<Node>>},
     CallExpression {function: Option<Box<Node>>, arguments: Vec<Node>},
     IntegerLiteral {value: i32},
+    FloatLiteral {value: f32},
     StringLiteral {value: String},
     ArrayLiteral {elements: Vec<Node>},
     IndexExpression {left: Option<Box<Node>>, right: Option<Box<Node>>},
@@ -15,6 +16,7 @@ pub enum Node {
     InfixExpression {left: Option<Box<Node>>, operator: String, right: Option<Box<Node>>},
     IfExpression {condition: Option<Box<Node>>, consequence: Option<Box<Node>>, alternative: Option<Box<Node>>},
     WhileExpession {condition: Option<Box<Node>>, body: Option<Box<Node>>},
+    BreakStatement,
     ExpressionStatement {expression: Option<Box<Node>>},
     LetStatement {name: Box<Node>, value: Option<Box<Node>>},
     AssignStatement {name: Box<Node>, operator: String, value: Option<Box<Node>>},
@@ -24,7 +26,7 @@ pub enum Node {
 
 pub fn indent(s: &str) -> String {
     s.lines()
-        .map(|line| format!("  {}", line)) // Add 2 spaces to each line
+        .map(|line| format!("  {}", line))
         .collect::<Vec<_>>()
         .join("\n")
 }
@@ -33,6 +35,7 @@ impl fmt::Display for Node {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Node::IntegerLiteral { value } => write!(f, "(Integer: {})", value),
+            Node::FloatLiteral { value } => write!(f, "(Float: {})", value),
             Node::BooleanExpression { value } => write!(f, "(Boolean: {})", value),
             Node::Identifier { value } => write!(f, "(Identifier: {})", value),
             Node::BlockStatement { statements } => {
@@ -79,6 +82,7 @@ impl fmt::Display for Node {
                 let bod = indent(&format!("{}", body.clone().unwrap()));
                 return write!(f, "while ({}) {{ \n{} }}", condition.clone().unwrap(), bod);
             },
+            Node::BreakStatement => write!(f, "break"),
             Node::ExpressionStatement { expression } => { 
                 if let Some(ref exp) = expression.clone() {
                     return write!(f, "{}", exp);

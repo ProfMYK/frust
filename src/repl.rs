@@ -57,7 +57,7 @@ pub fn start() {
     }
 }
 
-fn print_errors(errors: Vec<String>) {
+pub fn print_errors(errors: Vec<String>) {
     for error in errors {
         println!("\t{}", error);
     }

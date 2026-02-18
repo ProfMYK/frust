@@ -4,11 +4,11 @@ use raylib::prelude::*;
 
 use crate::ast::{Node, indent};
 
-#[derive(Clone, Debug)] 
+#[derive(Clone)] 
 pub struct WindowHandle {
     pub rl: Rc<RefCell<RaylibHandle>>,
-    pub draw: Rc<RefCell<RaylibDrawHandle>>,
     pub thread: Rc<RaylibThread>,
+    pub queue: Rc<RefCell<Vec<DrawCommands>>>,
 }
 
 impl PartialEq for WindowHandle {
@@ -17,13 +17,21 @@ impl PartialEq for WindowHandle {
     }
 }
 
+#[derive(Debug)]
+pub enum DrawCommands {
+    Clear(Color),
+    Circle { x: i32, y: i32, radius: i32, color: Color },
+    Pixel { x: i32, y: i32, color: Color},
+}
+
 #[derive(PartialEq, Clone)]
 pub enum Object {
     Integer(i32),
+    Float(f32),
     Boolean(bool),
     String(String),
+    Color(Color),
     Array {elements: Vec<Object>},
-    Window (WindowHandle),
     Function {parameters: Vec<Node>, body: Node, env: EnvRef},
     Builtin(BuiltinFunction),
     ReturnValue {value: Box<Object>},
@@ -31,7 +39,7 @@ pub enum Object {
     Null,
 }
 
-type BuiltinFunction = fn(Vec<Object>) -> Object;
+type BuiltinFunction = fn(Vec<Object>, env: EnvRef) -> Object;
 
 const TRUE: Object = Object::Boolean(true);
 const FALSE: Object = Object::Boolean(false);
@@ -42,6 +50,7 @@ const NULL: Object = Object::Null;
 pub struct Environmet {
     store: HashMap<String, Object>,
     outer: Option<EnvRef>,
+    window_handle: Option<WindowHandle>,
 }
 
 pub type EnvRef = Rc<RefCell<Environmet>>;
@@ -51,6 +60,7 @@ impl Environmet {
         Rc::new(RefCell::new(Environmet {
             store: HashMap::new(),
             outer: None,
+            window_handle: None,
         }))
     }
 
@@ -58,6 +68,7 @@ impl Environmet {
         Rc::new(RefCell::new(Environmet { 
             store: HashMap::new(), 
             outer: Some(outer),
+            window_handle: None,
         }))
     }
 
@@ -86,6 +97,15 @@ impl Environmet {
         }
     }
 
+    fn get_window_handle(&self) -> Option<WindowHandle> {
+        match &self.window_handle {
+            Some(handle) => Some(handle.clone()),
+            None => match &self.outer {
+                Some(outer) => outer.borrow().get_window_handle(),
+                None => None,
+            }
+        }
+    }
 }
 
 fn boolean_to_obj(b: bool) -> Object {
@@ -96,7 +116,7 @@ fn boolean_to_obj(b: bool) -> Object {
     }
 }
 
-fn builtin_len(args: Vec<Object>) -> Object {
+fn builtin_len(args: Vec<Object>, _env: EnvRef) -> Object {
     if args.len() != 1 {
         return Object::Error { message: format!("wrong number of arguments. got: {}, want: 1", args.len()) };
     }
@@ -109,7 +129,7 @@ fn builtin_len(args: Vec<Object>) -> Object {
 }
 
 
-fn builtin_init_window(args: Vec<Object>) -> Object {
+fn builtin_init_window(args: Vec<Object>, env: EnvRef) -> Object {
     if args.len() != 3 {
         return Object::Error { message: format!("wrong number of arguments. got: {}, want: 3\n\t USAGE: init_window(width, height, title);", args.len()) };
     }
@@ -118,15 +138,23 @@ fn builtin_init_window(args: Vec<Object>) -> Object {
     let height_obj = args[1].clone();
     let title_obj = args[2].clone();
     if let Object::Integer(width) = width_obj && let Object::Integer(height) = height_obj && let Object::String(title) = title_obj.clone() {
-        let (rl, thread) = raylib::init()
+        let (mut rl, thread) = raylib::init()
             .size(width, height)
             .title(&title)
             .build();
 
-        return Object::Window(WindowHandle {
+        rl.set_trace_log(TraceLogLevel::LOG_NONE);
+        rl.set_target_fps(60);
+
+        let mut env_ref = env.borrow_mut();
+        env_ref.window_handle = Some(WindowHandle {
             rl: Rc::new(RefCell::new(rl)),
             thread: Rc::new(thread),
-        })
+            queue: Rc::new(RefCell::new(Vec::new())),
+        });
+        drop(env_ref);
+
+        return NULL;
     }
 
     Object::Error { message: format!("wrong argument type. got width: {}, height: {}, title: {}, expected, width: Integer, height: Integer, title: Integer", 
@@ -134,21 +162,108 @@ fn builtin_init_window(args: Vec<Object>) -> Object {
 
 }
 
-fn builtin_should_close(args: Vec<Object>) -> Object {
-    if args.len() != 1 {
-        return Object::Error { message: format!("wrong number of arguments. got: {}, want: 1\n\t USAGE: should_close(window);", args.len()) };
+fn builtin_should_close(args: Vec<Object>, env: EnvRef) -> Object {
+    if args.len() != 0 {
+        return Object::Error { message: format!("wrong number of arguments. got: {}, want: 0\n\t USAGE: should_close();", args.len()) };
     }
 
-    if let Object::Window(handle) = args[0].clone() {
-        let should_close = handle.rl.borrow().window_should_close();
-        return Object::Boolean(should_close);
+    if let Some(handle) = &env.borrow().window_handle {
+        return boolean_to_obj(handle.rl.borrow().window_should_close());
     }
 
-    Object::Error { message: format!("wrong argument type. got window: {}, expected, window: Window", 
-        args[0].kind()) }
+    Object::Error { message: format!("window not initilized!") }
 }
 
-fn builtin_print(args: Vec<Object>) -> Object {
+fn builtin_circle(args: Vec<Object>, env: EnvRef) -> Object {
+    if args.len() != 4 {
+        return Object::Error { message: format!("wrong number of arguments. got: {}, want: 3\n\t USAGE: circle(x, y, radius, color);", args.len()) };
+    }
+    
+    match (&args[0], &args[1], &args[2], &args[3]) {
+        (Object::Integer(x), Object::Integer(y), Object::Integer(radius), Object::Color(color)) => {
+             if let Some(handle) = &env.borrow().window_handle {
+                handle.queue.borrow_mut().push(DrawCommands::Circle {
+                    x: *x, 
+                    y: *y, 
+                    radius: *radius, 
+                    color: *color,
+                });
+             }
+             return NULL;
+        },
+        _ => Object::Error { 
+            message: format!("Argument type mismatch. Expected circle(Integer, Integer, Integer, Color), got ({}, {}, {}, {})", args[0].kind(), args[1].kind(), args[2].kind(), args[3].kind()) 
+        }
+    }
+}
+
+fn builtin_color(args: Vec<Object>, _env: EnvRef) -> Object {
+    if args.len() != 3 {
+        return Object::Error { message: format!("wrong number of arguments. got: {}, want: 3\n\tUSAGE: color(r, g, b);", args.len()) };
+    }
+    
+    match (&args[0], &args[1], &args[2]) {
+        (Object::Integer(r), Object::Integer(g), Object::Integer(b)) => Object::Color(Color::new(*r as u8, *g as u8, *b as u8, 255)),
+        _ => Object::Error { 
+            message: format!("Argument type mismatch. Expected color(Integer, Integer, Integer), got ({}, {}, {})", args[0].kind(), args[1].kind(), args[2].kind()) 
+        }
+    }
+}
+
+
+fn builtin_pixel(args: Vec<Object>, env: EnvRef) -> Object {
+    if args.len() != 3 {
+        return Object::Error { message: format!("wrong number of arguments. got: {}, want: 2\n\t USAGE: pixel(x, y, color);", args.len()) };
+    }
+    
+    match (&args[0], &args[1], &args[2]) {
+        (Object::Integer(x), Object::Integer(y), Object::Color(color)) => {
+             if let Some(handle) = &env.borrow().get_window_handle() {
+                handle.queue.borrow_mut().push(DrawCommands::Pixel {
+                    x: *x, 
+                    y: *y, 
+                    color: *color,
+                });
+             }
+             return NULL;
+        },
+        _ => Object::Error { 
+            message: format!("Argument type mismatch. Expected pixel(Integer, Integer, Color), got ({}, {}, {})", args[0].kind(), args[1].kind(), args[2].kind()) 
+        }
+    }
+}
+
+fn builtin_clear(args: Vec<Object>, env: EnvRef) -> Object {
+    if args.len() != 1 {
+        return Object::Error { message: format!("wrong number of arguments. got: {}, want: 1\n\t USAGE: clear(color);", args.len()) };
+    }
+    
+    match &args[0] {
+        Object::Color(color) => {
+            if let Some(handle) = &env.borrow().window_handle {
+                handle.queue.borrow_mut().push(DrawCommands::Clear(color.clone()));
+            }
+            NULL
+        },
+        _ => Object::Error { 
+            message: format!("Argument type mismatch. Expected clear(Color), got ({})", args[0].kind()) 
+        }
+    }
+}
+
+fn builtin_print(args: Vec<Object>, _env: EnvRef) -> Object {
+    if args.len() < 1 {
+        return Object::Error { message: format!("requires at least 1 argument, got: {}", args.len()) };
+    }
+
+    for arg in args {
+        print!("{}", arg);
+    }
+
+    NULL
+}
+
+fn builtin_println(args: Vec<Object>, _env: EnvRef) -> Object {
     if args.len() < 1 {
         return Object::Error { message: format!("requires at least 1 argument, got: {}", args.len()) };
     }
@@ -156,14 +271,55 @@ fn builtin_print(args: Vec<Object>) -> Object {
     for arg in args {
         println!("{}", arg);
     }
+
     NULL
+}
+
+fn builtin_as_float(args: Vec<Object>, _env: EnvRef) -> Object {
+    if args.len() != 1 {
+        return Object::Error { message: format!("requires 1 argument, got: {}", args.len()) };
+    }
+
+    match &args[0] {
+        Object::Integer(val) => Object::Float(*val as f32),
+        Object::Float(val) => Object::Float(*val),
+        _ => Object::Error { message: format!("requires an Integer, got: {}", args[0].kind()) }
+    }
+}
+
+fn builtin_as_integer(args: Vec<Object>, _env: EnvRef) -> Object {
+    if args.len() != 1 {
+        return Object::Error { message: format!("requires 1 argument, got: {}", args.len()) };
+    }
+
+    match &args[0] {
+        Object::Integer(val) => Object::Integer(*val),
+        Object::Float(val) => Object::Integer(*val as i32),
+        _ => Object::Error { message: format!("requires an Float, got: {}", args[0].kind()) }
+    }
+}
+
+fn builtin_type(args: Vec<Object>, _env: EnvRef) -> Object {
+    if args.len() != 1 {
+        return Object::Error { message: format!("requires 1 argument, got: {}", args.len()) };
+    }
+
+    Object::String(args[0].kind().to_string())
 }
 
 fn get_builtin(name: &str) -> Option<Object> {
     match name {
         "len" => Some(Object::Builtin(builtin_len)),
         "print" => Some(Object::Builtin(builtin_print)),
-        "init_window" => Some(Object::Builtin(builtin_init_window)),
+        "println" => Some(Object::Builtin(builtin_println)),
+        "as_float" => Some(Object::Builtin(builtin_as_float)),
+        "as_integer" => Some(Object::Builtin(builtin_as_integer)),
+        "type" => Some(Object::Builtin(builtin_type)),
+        "init" => Some(Object::Builtin(builtin_init_window)),
+        "circle" => Some(Object::Builtin(builtin_circle)),
+        "color" => Some(Object::Builtin(builtin_color)),
+        "pixel" => Some(Object::Builtin(builtin_pixel)),
+        "clear" => Some(Object::Builtin(builtin_clear)),
         "should_close" => Some(Object::Builtin(builtin_should_close)),
         _ => None,
     }
@@ -174,6 +330,7 @@ pub fn eval(node: Node, env: EnvRef) -> Object {
         Node::Program { statements } => eval_program(statements, env.clone()),
         Node::ExpressionStatement { expression } => eval(*expression.unwrap(), env.clone()),
         Node::IntegerLiteral { value } => Object::Integer(value),
+        Node::FloatLiteral { value } => Object::Float(value),
         Node::StringLiteral { value } => Object::String(value),
         Node::BooleanExpression { value } => {
             if value {
@@ -257,7 +414,7 @@ pub fn eval(node: Node, env: EnvRef) -> Object {
                 return args[0].clone();
             }
 
-            apply_function(func, args)
+            apply_function(func, args, env.clone())
         },
         Node::ArrayLiteral { elements } => {
             let elems = eval_expressions(elements, env);
@@ -287,33 +444,98 @@ pub fn eval(node: Node, env: EnvRef) -> Object {
 
                 let val = eval(*value.clone().unwrap(), env.clone());
 
-                return eval_assign_statement(&name_value, operator, val, env.clone());
+                return eval_assign_statement(&name_value, operator, val, env);
+            } else if let Node::IndexExpression { left: left_node, right: right_node } = *name {
+                let namee = *left_node.unwrap().to_owned();
+
+                if let Node::Identifier { value: name_value } = namee {
+                    let right = *right_node.unwrap().to_owned();
+                    let index = eval(right.clone(), env.clone());
+                    let val = eval(*value.clone().unwrap(), env.clone());
+                    return eval_index_assign_statment(&name_value, index, operator, val, env);
+                }
             }
 
             NULL
         }
         Node::WhileExpession { condition, body } => {
-            if let Some(cond) = condition {
-                let mut con = eval(*cond.clone(), env.clone());
-                if matches!(con, Object::Error {..}) {
-                    return con;
-                }
-                
-                let bod = *body.clone().unwrap();
-                while is_thruty(con.clone()) {
-                    let evaluated = eval(bod.clone(), env.clone());
-                    if matches!(evaluated, Object::Error {..}) {
+            if let (Some(cond), Some(body_node)) = (condition, body) {
+                loop {
+                    let condition_obj = eval(*cond.clone(), env.clone());
+
+                    if let Object::Error { .. } = condition_obj {
+                        return condition_obj;
+                    }
+
+                    if !is_thruty(condition_obj) {
+                        break;
+                    }
+
+                    let evaluated = eval(*body_node.clone(), env.clone());
+
+                    flush_graphics(env.clone());
+
+                    if let Object::Error { .. } = evaluated {
                         return evaluated;
                     }
-                    con = eval(*cond.clone(), env.clone());
                 }
+
                 return NULL;
 
             } else {
-                return Object::Error { message: format!("condition not avaiable: {:?}", condition) };
+                return Object::Error { 
+                    message: format!("Missing condition or body in while loop.") 
+                };
             }
         }
+        Node::BreakStatement => {
+            NULL
+        }
         // _ => NULL
+    }
+}
+
+fn flush_graphics(env: EnvRef) {
+    let env_borrow = env.borrow();
+    if let Some(handle) = &env_borrow.window_handle {
+        let mut rl = handle.rl.borrow_mut();
+        let mut queue = handle.queue.borrow_mut();
+        if queue.is_empty() { return; }
+        let mut d = rl.begin_drawing(&handle.thread);
+
+        for cmd in queue.iter() {
+            match cmd {
+                DrawCommands::Clear(color) => d.clear_background(*color),
+                DrawCommands::Circle { x, y, radius, color } => d.draw_circle(*x, *y, *radius as f32, *color),
+                DrawCommands::Pixel { x, y, color } => d.draw_pixel(*x, *y, *color),
+            }
+        }
+
+        queue.clear();
+    }
+}
+
+fn eval_index_assign_statment(name: &str, index: Object, operator: String, value: Object, env: EnvRef) -> Object {
+    match operator.as_str() {
+        "=" => {
+            let mut env_borrow = env.borrow_mut();
+            let arr = env_borrow.store.get_mut(name);
+            match arr {
+                Some(Object::Array { elements }) => {
+                    if let Object::Integer(i) = index {
+                        let mut new_elements = elements.clone();
+                        new_elements[i as usize] = value;
+                        env_borrow.set(name.to_string(), Object::Array { elements: new_elements });
+                    } else {
+                        return Object::Error { message: format!("unsupported index type: {}", index.kind()) }
+                    }
+                },
+                None => return Object::Error { message: format!("array not found: {}", name) },
+                _ => return Object::Error { message: format!("array not found: {}", name) }
+            }
+            return NULL
+        },
+        _ => return Object::Error { message: format!("assign operator not supported: {}", operator) }
     }
 }
 
@@ -328,6 +550,9 @@ fn eval_assign_statement(name: &str, op: String, val: Object, env: EnvRef) -> Ob
             if let Object::Integer(left_val) = val && let Object::Integer(right_val) = cur.clone() {
                 env.borrow_mut().set(name.to_string(), Object::Integer(left_val + right_val));
                 return NULL;
+            } else if let Object::Float(left_val) = val && let Object::Float(right_val) = cur.clone() {
+                env.borrow_mut().set(name.to_string(), Object::Float(left_val + right_val));
+                return NULL;
             } else {
                 return Object::Error { message: format!("type mismatch between assignments, expected: {}, got: {}", cur.kind(), val.kind()) }
             }
@@ -336,6 +561,9 @@ fn eval_assign_statement(name: &str, op: String, val: Object, env: EnvRef) -> Ob
             let cur = env.borrow().get(name).unwrap();
             if let Object::Integer(left_val) = val && let Object::Integer(right_val) = cur.clone() {
                 env.borrow_mut().set(name.to_string(), Object::Integer(right_val - left_val));
+                return NULL;
+            } else if let Object::Float(left_val) = val && let Object::Float(right_val) = cur.clone() {
+                env.borrow_mut().set(name.to_string(), Object::Float(right_val - left_val));
                 return NULL;
             } else {
                 return Object::Error { message: format!("type mismatch between assignments, expected: {}, got: {}", cur.kind(), val.kind()) }
@@ -358,14 +586,14 @@ fn eval_index_expression(left: Object, index: Object) -> Object {
     }
 }
 
-fn apply_function(func: Object, args: Vec<Object>) -> Object {
+fn apply_function(func: Object, args: Vec<Object>, env: EnvRef) -> Object {
     if let Object::Function { parameters, body, env } = func {
         let extended_env = extend_function_env(args, parameters, env);
         let evaluated = eval(body, extended_env);
         return unwrap_return_value(evaluated);
     }
     if let Object::Builtin(builtin) = func {
-        return builtin(args);
+        return builtin(args, env);
     }
     return Object::Error { message: format!("not a function: {}", func.kind()) }
 }
@@ -443,6 +671,9 @@ fn eval_infix_expression(op: String, left: Object, right: Object) -> Object {
     if let Object::Integer(left_val) = left && let Object::Integer(right_val) = right {
         return eval_integer_infix_expression(op, left_val, right_val);
     }
+    if let Object::Float(left_val) = left && let Object::Float(right_val) = right {
+        return eval_float_infix_expression(op, left_val, right_val);
+    }
     if let Object::Boolean(left_val) = left && let Object::Boolean(right_val) = right {
         return eval_boolean_infix_expression(op, left_val, right_val);
     }
@@ -477,6 +708,20 @@ fn eval_integer_infix_expression(op: String, left: i32, right: i32) -> Object {
     }
 }
 
+fn eval_float_infix_expression(op: String, left: f32, right: f32) -> Object {
+    match op.as_str() {
+        "+" => Object::Float(left + right),
+        "-" => Object::Float(left - right),
+        "*" => Object::Float(left * right),
+        "/" => Object::Float(left / right),
+        "<" => boolean_to_obj(left < right),
+        ">" => boolean_to_obj(left > right),
+        "==" => boolean_to_obj(left == right),
+        "!=" => boolean_to_obj(left != right),
+        _ => Object::Error { message: format!("unknown operator Float {} Float", op) }
+    }
+}
+
 fn eval_boolean_infix_expression(op: String, left: bool, right: bool) -> Object {
     match op.as_str() {
         "==" => boolean_to_obj(left == right),
@@ -497,6 +742,9 @@ fn eval_minus_prefix_operator(exp: Object) -> Object {
     match exp {
         Object::Integer(val) => {
             Object::Integer(-val)
+        },
+        Object::Float(val) => {
+            Object::Float(-val)
         },
         _ => Object::Error { message: format!("unknown operator -{}", exp.kind()) }
     }
@@ -520,15 +768,16 @@ impl fmt::Display for Object {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Object::Integer(val) => write!(f, "{}", val),
+            Object::Float(val) => write!(f, "{}", val),
             Object::Boolean(val) => write!(f, "{}", val),
             Object::String(value) => write!(f, "{}", value),
+            Object::Color(color) => write!(f, "{:?}", color),
             Object::Array { elements } => {
                 let elems = elements.iter().map(|p| format!("{p}")).collect::<Vec<_>>().join(", ");
                 write!(f, "[{}]", elems)
             },
-            Object::Window(_) => write!(f, "Window Handle"),
             Object::Builtin(_) => write!(f, "Builtin Function"),
-            Object::Null => write!(f, ""),
+            Object::Null => Ok(()),
             Object::Error { message } => write!(f, "ERROR: {}", message),
             Object::ReturnValue { value } => write!(f, "RETURN: {}", value),
             Object::Function { parameters, body, env: _ } => {
@@ -545,10 +794,11 @@ impl Object {
     fn kind(&self) -> &'static str {
         match self {
             Object::Integer(_) => "Integer",
+            Object::Float(_) => "Float",
             Object::Boolean(_) => "Boolean",
             Object::String(_) => "String",
+            Object::Color(_) => "Color",
             Object::Array {..} => "Array",
-            Object::Window(_) => "Window",
             Object::Builtin(_) => "Builtin Function",
             Object::ReturnValue{..} => "Return Value",
             Object::Null => "Null",

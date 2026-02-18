@@ -8,8 +8,9 @@ pub enum TokenType {
     // Indetifiers
     IDENTIFIER,
 
-    // DATA TYPES
+    // Data Types
     INT,
+    FLOAT,
     STRING,
 
     // Operators
@@ -29,7 +30,7 @@ pub enum TokenType {
     ADDASSIGN,     // +=
     SUBASSIGN,     // -=
 
-    // DELIMITERS
+    // Delimeters
     COMMA,     // ,
     SEMICOLON, // ;
 
@@ -40,12 +41,13 @@ pub enum TokenType {
     LBRACKET,  // [
     RBRACKET,  // ]
     
-    // KEYWORDS
+    // Keywords
     FUNCTION,  // fun
     LET,       // let
     TRUE,      // true
     FALSE,     // false
-    WHILE,        // if
+    WHILE,     // while
+    BREAK,     // break
     IF,        // if
     ELSE,      // else
     RETURN,    // return
@@ -126,7 +128,7 @@ impl Lexer {
     }
 
     pub fn next_token(&mut self) -> Token {
-        let token: Token; // = Token::new(TokenType::ILLEGAL, "".to_string());
+        let token: Token;
 
         self.skip_whitespace();
 
@@ -187,8 +189,12 @@ impl Lexer {
                 return token;
             },
             ch if ch.is_ascii_digit() => {
-                let number = self.read_number();
-                token = Token::new(TokenType::INT, number);
+                let (number, is_float) = self.read_number();
+                if !is_float {
+                    token = Token::new(TokenType::INT, number);
+                } else {
+                    token = Token::new(TokenType::FLOAT, number);
+                }
             },
             _ => {
                 token = Token::new(TokenType::ILLEGAL, (self.ch as char).to_string());
@@ -218,10 +224,23 @@ impl Lexer {
         self.input.get(pos..self.position).expect("Well something went horribly wrong, oops!").to_string()
     }
 
-    fn read_number(&mut self) -> String {
-        let position = self.position;
+    fn read_number(&mut self) -> (String, bool) {
+        let mut position = self.position;
         while self.ch.is_ascii_digit() {
             self.read_char();
+        }
+
+        if self.ch == b'.' {
+            let first_part = self.input.get(position..self.position).expect("Well something went horribly wrong, oops!").to_string();
+            self.read_char();
+            position = self.position;
+            while self.ch.is_ascii_digit() {
+                self.read_char();
+            }
+            let last_part = self.input.get(position..self.position).expect("Well something went horribly wrong, oops!").to_string();
+            self.position -= 1;
+            self.read_position -= 1;
+            return (format!("{}.{}", first_part, last_part), true);
         }
 
         let literal = self.input.get(position..self.position).expect("Well something went horribly wrong, oops!").to_string();
@@ -229,7 +248,7 @@ impl Lexer {
         self.position -= 1;
         self.read_position -= 1;
 
-        literal
+        (literal, false)
     }
 
     fn skip_whitespace(&mut self) {
@@ -241,6 +260,7 @@ impl Lexer {
     fn lookup_ident(ident: String) -> TokenType {
         match ident {
             s if s == "fun".to_string() => return TokenType::FUNCTION,
+            s if s == "break".to_string() => return TokenType::BREAK,
             s if s == "let".to_string() => return TokenType::LET,
             s if s == "true".to_string() => return TokenType::TRUE,
             s if s == "false".to_string() => return TokenType::FALSE,

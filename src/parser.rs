@@ -56,6 +56,7 @@ impl Parser {
 
         p.register_prefix(TokenType::IDENTIFIER, Parser::parse_identifier);
         p.register_prefix(TokenType::INT, Parser::parse_integer_literal);
+        p.register_prefix(TokenType::FLOAT, Parser::parse_float_literal);
         p.register_prefix(TokenType::BANG, Parser::parse_prefix_expression);
         p.register_prefix(TokenType::MINUS, Parser::parse_prefix_expression);
         p.register_prefix(TokenType::TRUE, Parser::parse_boolean_expression);
@@ -63,6 +64,7 @@ impl Parser {
         p.register_prefix(TokenType::LPAREN, Parser::parse_grouped_expression);
         p.register_prefix(TokenType::IF, Parser::parse_if_expression);
         p.register_prefix(TokenType::WHILE, Parser::parse_while_expression);
+        p.register_prefix(TokenType::BREAK, Parser::parse_break_expression);
         p.register_prefix(TokenType::FUNCTION, Parser::parse_function_literal);
         p.register_prefix(TokenType::STRING, Parser::parse_string_literal);
         p.register_prefix(TokenType::LBRACKET, Parser::parse_array_literal);
@@ -155,22 +157,23 @@ impl Parser {
     }
 
     pub fn parse_assign_statment(&mut self) -> Option<Node> {
-        let name = Node::Identifier { value: self.cur_token.clone().literal };
+        let name = self.parse_expression(Precedence::Lowest as i32).unwrap();
 
-        if self.peak_token.ttype != TokenType::ASSIGN && self.peak_token.ttype != TokenType::ADDASSIGN && self.peak_token.ttype != TokenType::SUBASSIGN {
-            return self.parse_expression_statement();
+        if self.peak_token.ttype != TokenType::ASSIGN && 
+            self.peak_token.ttype != TokenType::ADDASSIGN && 
+                self.peak_token.ttype != TokenType::SUBASSIGN {
+                    self.next_token();
+                    return Some(*name.to_owned());
         }
+
         self.next_token();
-        let operator = self.cur_token.literal.clone();
+        let op = self.cur_token.literal.clone();
         self.next_token();
 
         let value = self.parse_expression(Precedence::Lowest as i32);
+        self.next_token();
 
-        if self.peak_token.ttype == TokenType::SEMICOLON {
-            self.next_token();
-        }
-
-        Some(Node::AssignStatement { name: Box::new(name), operator, value })
+        Some(Node::AssignStatement { name , operator: op, value })
     }
 
     pub fn parse_let_statement(&mut self) -> Option<Node> {
@@ -250,9 +253,27 @@ impl Parser {
         }
     }
 
+    pub fn parse_float_literal(parser: &mut Parser) -> Option<Box<Node>> {
+        match parser.cur_token.literal.parse::<f32>() {
+            Ok(n) => {
+                return Some(Box::new(Node::FloatLiteral { value: n } ))
+            },
+            Err(e) => {
+                let msg = format!("Couldn't parse {} as float, got error {}!", 
+                    parser.cur_token.literal, e);
+                parser.errors.push(msg);
+                return None;
+            }
+        }
+    }
+
     pub fn parse_boolean_expression(parser: &mut Parser) -> Option<Box<Node>> {
         let token = parser.cur_token.clone();
         Some(Box::new(Node::BooleanExpression { value: token.ttype == TokenType::TRUE }))
+    }
+
+    pub fn parse_break_expression(_parser: &mut Parser) -> Option<Box<Node>> {
+        Some(Box::new(Node::BreakStatement))
     }
 
     pub fn parse_grouped_expression(parser: &mut Parser) -> Option<Box<Node>> {
