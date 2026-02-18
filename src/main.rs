@@ -3,12 +3,14 @@ mod ast;
 mod parser;
 mod repl;
 mod evaluator;
+mod graphics;
+mod object;
 
 use std::{env, fs, process::exit};
 
 use repl::*;
 
-use crate::{evaluator::{Environmet, eval}, lexer::Lexer, parser::Parser};
+use crate::{evaluator::eval, lexer::Lexer, parser::Parser, object::Environmet};
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
 
@@ -38,7 +40,7 @@ fn main() {
                                 }
                             
                                 let evaluated = eval(program, env.clone());
-                                if !matches!(evaluated, evaluator::Object::Null) {
+                                if !matches!(evaluated, object::Object::Null) {
                                     println!("{}", evaluated);
                                 }
                             }

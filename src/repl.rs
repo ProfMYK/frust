@@ -1,6 +1,6 @@
 use std::{io::{self, Write}};
 
-use crate::{evaluator::{Environmet, eval}, lexer::Lexer, parser::Parser};
+use crate::{evaluator::eval, lexer::Lexer, parser::Parser, object::Environmet};
 
 enum ReplMode {
     Evaluate,

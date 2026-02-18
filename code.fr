@@ -1,40 +1,5 @@
-let width = 800;
-let height = 600;
-
-init(width, height, "SUPER DUPER COOL GAME");
-
-let background = color(18, 18, 18);
-let box_color = color(50, 50, 240);
-let ball_color = color(240, 50, 50);
-
-let ball = [400.0, 300.0];
-let size = 16;
-
-let gravity = 9.18;
-
-let square = fun(x, y, w, h, acolor) {
-  let i = x;
-  while (i < x + w) {
-    let j = y;
-    while (j < y + h) {
-      pixel(i, j, acolor);
-      j += 1;
-    }
-    i += 1;
-  }
-}
+init(800, 600, "Rectangle Test");
 
 while (!should_close()) {
-  clear(background);
-  circle(as_integer(ball[0]), as_integer(ball[1]), as_integer(size), ball_color);
-  ball[1] = ball[1] + gravity;
-  if (ball[1] > 500.0) {
-    gravity = -gravity;
-  }
-
-  if (ball[1] < 100.0) {
-    gravity = -gravity;
-  }
-
-  square(100, 200, 50, 50, box_color);
+  rectangle(10, 10, 500, 300, color(240, 50, 50));
 }
