@@ -1,5 +1,11 @@
-init(800, 600, "Rectangle Test");
+let width = 800.0;
+let height = 600.0;
+init(as_integer(width), as_integer(height), "GAME");
+
+let player = vec2(width / 2.0, height / 2.0);
+let player_color = color(240, 50, 50);
 
 while (!should_close()) {
-  rectangle(10, 10, 500, 300, color(240, 50, 50));
+  clear(color(18, 18, 18));
+  circle(player, 16.0, player_color);
 }

@@ -12,6 +12,7 @@ pub enum Object {
     Boolean(bool),
     String(String),
     Color(Color),
+    Vector2 {x: f32, y: f32},
     Array {elements: Vec<Object>},
     Function {parameters: Vec<Node>, body: Node, env: EnvRef},
     Builtin(BuiltinFunction),
@@ -28,6 +29,7 @@ impl fmt::Display for Object {
             Object::Boolean(val) => write!(f, "{}", val),
             Object::String(value) => write!(f, "{}", value),
             Object::Color(color) => write!(f, "{:?}", color),
+            Object::Vector2 { x, y } => write!(f, "{{x: {}, y: {}}}", x, y),
             Object::Array { elements } => {
                 let elems = elements.iter().map(|p| format!("{p}")).collect::<Vec<_>>().join(", ");
                 write!(f, "[{}]", elems)
@@ -53,6 +55,7 @@ impl Object {
             Object::Float(_) => "Float",
             Object::Boolean(_) => "Boolean",
             Object::String(_) => "String",
+            Object::Vector2{..} => "Vector2",
             Object::Color(_) => "Color",
             Object::Array {..} => "Array",
             Object::Builtin(_) => "Builtin Function",
@@ -257,6 +260,8 @@ pub fn get_builtin(name: &str) -> Option<Object> {
         "init" => Some(Object::Builtin(builtin_init_window)),
         "circle" => Some(Object::Builtin(builtin_circle)),
         "color" => Some(Object::Builtin(builtin_color)),
+        "vec2" => Some(Object::Builtin(builtin_vec2)),
+        "dot" => Some(Object::Builtin(builtin_dot)),
         "pixel" => Some(Object::Builtin(builtin_pixel)),
         "rectangle" => Some(Object::Builtin(builtin_rectangle)),
         "clear" => Some(Object::Builtin(builtin_clear)),

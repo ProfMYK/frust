@@ -19,9 +19,9 @@ impl PartialEq for WindowHandle {
 #[derive(Debug)]
 pub enum DrawCommands {
     Clear(Color),
-    Circle { x: i32, y: i32, radius: i32, color: Color },
-    Rectangle { x: i32, y: i32, width: i32, height: i32, color: Color },
-    Pixel { x: i32, y: i32, color: Color},
+    Circle { position: Vector2, radius: f32, color: Color },
+    Rectangle { position: Vector2, size: Vector2, color: Color },
+    Pixel { position: Vector2, color: Color},
 }
 
 pub fn builtin_init_window(args: Vec<Object>, env: EnvRef) -> Object {
@@ -70,16 +70,15 @@ pub fn builtin_should_close(args: Vec<Object>, env: EnvRef) -> Object {
 }
 
 pub fn builtin_circle(args: Vec<Object>, env: EnvRef) -> Object {
-    if args.len() != 4 {
-        return Object::Error { message: format!("wrong number of arguments. got: {}, want: 3\n\t USAGE: circle(x, y, radius, color);", args.len()) };
+    if args.len() != 3 {
+        return Object::Error { message: format!("wrong number of arguments. got: {}, want: 3\n\t USAGE: circle(position, radius, color);", args.len()) };
     }
     
-    match (&args[0], &args[1], &args[2], &args[3]) {
-        (Object::Integer(x), Object::Integer(y), Object::Integer(radius), Object::Color(color)) => {
+    match (&args[0], &args[1], &args[2]) {
+        (Object::Vector2 { x, y }, Object::Float(radius), Object::Color(color)) => {
              if let Some(handle) = &env.borrow().window_handle {
                 handle.queue.borrow_mut().push(DrawCommands::Circle {
-                    x: *x, 
-                    y: *y, 
+                    position: Vector2::new(*x, *y),
                     radius: *radius, 
                     color: *color,
                 });
@@ -87,32 +86,31 @@ pub fn builtin_circle(args: Vec<Object>, env: EnvRef) -> Object {
              return NULL;
         },
         _ => Object::Error { 
-            message: format!("Argument type mismatch. Expected circle(Integer, Integer, Integer, Color), got ({}, {}, {}, {})", args[0].kind(), args[1].kind(), args[2].kind(), args[3].kind()) 
+            message: format!("Argument type mismatch. Expected circle(Vector2, Float, Color), got ({}, {}, {})", 
+                         args[0].kind(), args[1].kind(), args[2].kind()) 
         }
     }
 }
 
 pub fn builtin_rectangle(args: Vec<Object>, env: EnvRef) -> Object {
-    if args.len() != 5 {
-        return Object::Error { message: format!("wrong number of arguments. got: {}, want: 4\n\t USAGE: rectangle(x, y, width, height, color);", args.len()) };
+    if args.len() != 3 {
+        return Object::Error { message: format!("wrong number of arguments. got: {}, want: 3\n\t USAGE: rectangle(position, size, color);", args.len()) };
     }
     
-    match (&args[0], &args[1], &args[2], &args[3], &args[4]) {
-        (Object::Integer(x), Object::Integer(y), Object::Integer(width), Object::Integer(height), Object::Color(color)) => {
+    match (&args[0], &args[1], &args[2]) {
+        (Object::Vector2 { x: pos_x, y: pos_y }, Object::Vector2 { x: size_x, y: size_y }, Object::Color(color)) => {
              if let Some(handle) = &env.borrow().window_handle {
                 handle.queue.borrow_mut().push(DrawCommands::Rectangle {
-                    x: *x, 
-                    y: *y, 
-                    width: *width, 
-                    height: *height, 
+                    position: Vector2::new(*pos_x, *pos_y),
+                    size: Vector2::new(*size_x, *size_y),
                     color: *color,
                 });
              }
              return NULL;
         },
         _ => Object::Error { 
-            message: format!("Argument type mismatch. Expected rectangle(Integer, Integer, Integer, Integer, Color), got ({}, {}, {}, {}, {})", 
-                         args[0].kind(), args[1].kind(), args[2].kind(), args[3].kind(), args[4].kind()) 
+            message: format!("Argument type mismatch. Expected rectangle(Vector2, Vector2, Color), got ({}, {}, {})", 
+                         args[0].kind(), args[1].kind(), args[2].kind()) 
         }
     }
 }
@@ -130,25 +128,49 @@ pub fn builtin_color(args: Vec<Object>, _env: EnvRef) -> Object {
     }
 }
 
-
-pub fn builtin_pixel(args: Vec<Object>, env: EnvRef) -> Object {
-    if args.len() != 3 {
-        return Object::Error { message: format!("wrong number of arguments. got: {}, want: 2\n\t USAGE: pixel(x, y, color);", args.len()) };
+pub fn builtin_vec2(args: Vec<Object>, _env: EnvRef) -> Object {
+    if args.len() != 2 {
+        return Object::Error { message: format!("wrong number of arguments. got: {}, want: 2\n\tUSAGE: vec2(x, y);", args.len()) };
     }
     
-    match (&args[0], &args[1], &args[2]) {
-        (Object::Integer(x), Object::Integer(y), Object::Color(color)) => {
+    match (&args[0], &args[1]) {
+        (Object::Float(x), Object::Float(y)) => Object::Vector2 { x: *x, y: *y },
+        _ => Object::Error { 
+            message: format!("Argument type mismatch. Expected color(Float, Float), got ({}, {})", args[0].kind(), args[1].kind()) 
+        }
+    }
+}
+
+pub fn builtin_dot(args: Vec<Object>, _env: EnvRef) -> Object {
+    if args.len() != 2 {
+        return Object::Error { message: format!("wrong number of arguments. got: {}, want: 2\n\tUSAGE: dot(vec1, vec2);", args.len()) };
+    }
+    
+    match (&args[0], &args[1]) {
+        (Object::Vector2 { x: left_x, y: left_y }, Object::Vector2 { x: right_x, y: right_y }) => Object::Float(left_x * right_x + left_y * right_y),
+        _ => Object::Error { 
+            message: format!("Argument type mismatch. Expected color(Float, Float), got ({}, {})", args[0].kind(), args[1].kind()) 
+        }
+    }
+}
+
+pub fn builtin_pixel(args: Vec<Object>, env: EnvRef) -> Object {
+    if args.len() != 2 {
+        return Object::Error { message: format!("wrong number of arguments. got: {}, want: 2\n\t USAGE: pixel(position, color);", args.len()) };
+    }
+    
+    match (&args[0], &args[1]) {
+        (Object::Vector2{ x, y }, Object::Color(color)) => {
              if let Some(handle) = &env.borrow().get_window_handle() {
                 handle.queue.borrow_mut().push(DrawCommands::Pixel {
-                    x: *x, 
-                    y: *y, 
+                    position: Vector2::new(*x, *y),
                     color: *color,
                 });
              }
              return NULL;
         },
         _ => Object::Error { 
-            message: format!("Argument type mismatch. Expected pixel(Integer, Integer, Color), got ({}, {}, {})", args[0].kind(), args[1].kind(), args[2].kind()) 
+            message: format!("Argument type mismatch. Expected pixel(Vector2, Color), got ({}, {})", args[0].kind(), args[1].kind()) 
         }
     }
 }
@@ -182,9 +204,9 @@ pub fn flush_graphics(env: EnvRef) {
         for cmd in queue.iter() {
             match cmd {
                 DrawCommands::Clear(color) => d.clear_background(*color),
-                DrawCommands::Circle { x, y, radius, color } => d.draw_circle(*x, *y, *radius as f32, *color),
-                DrawCommands::Rectangle { x, y, width, height, color } => d.draw_rectangle(*x, *y, *width, *height, *color),
-                DrawCommands::Pixel { x, y, color } => d.draw_pixel(*x, *y, *color),
+                DrawCommands::Circle { position, radius, color } => d.draw_circle_v(position, *radius, color),
+                DrawCommands::Rectangle { position, size, color } => d.draw_rectangle_v(position, size, color),
+                DrawCommands::Pixel { position, color } => d.draw_pixel_v(position, color),
             }
         }
 

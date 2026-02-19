@@ -321,25 +321,32 @@ fn eval_program(statements: Vec<Node>, env: EnvRef) -> Object {
 }
 
 fn eval_infix_expression(op: String, left: Object, right: Object) -> Object {
-    if let Object::Integer(left_val) = left && let Object::Integer(right_val) = right {
-        return eval_integer_infix_expression(op, left_val, right_val);
+    match (left.clone(), right.clone()) {
+        (Object::Integer(left_val), Object::Integer(right_val)) => eval_integer_infix_expression(op, left_val, right_val),
+        (Object::Float(left_val), Object::Float(right_val)) => eval_float_infix_expression(op, left_val, right_val),
+        (Object::Integer(left_val), Object::Float(right_val)) => eval_float_infix_expression(op, left_val as f32, right_val),
+        (Object::Float(left_val), Object::Integer(right_val)) => eval_float_infix_expression(op, left_val, right_val as f32),
+        (Object::Boolean(left_val), Object::Boolean(right_val)) => eval_boolean_infix_expression(op, left_val, right_val),
+        (Object::Vector2 { x: left_x, y: left_y }, Object::Vector2 { x: right_x, y: right_y }) => eval_vector2_infix_expression(op, &[left_x, left_y], &[right_x, right_y]),
+        (Object::Vector2 { x: left_x, y: left_y }, Object::Float(right_val)) => eval_vector2_infix_expression(op, &[left_x, left_y], &[right_val, right_val]),
+        (Object::Vector2 { x: left_x, y: left_y }, Object::Integer(right_val)) => eval_vector2_infix_expression(op, &[left_x, left_y], &[right_val as f32, right_val as f32]),
+        (Object::String(ref left_val), Object::String(ref right_val)) => eval_string_infix_expression(op, &left_val, &right_val),
+        _ => Object::Error { message: format!("unknown operator {} {} {}", left.kind(), op, right.kind()) },
     }
-    if let Object::Float(left_val) = left && let Object::Float(right_val) = right {
-        return eval_float_infix_expression(op, left_val, right_val);
-    }
-    if let Object::Boolean(left_val) = left && let Object::Boolean(right_val) = right {
-        return eval_boolean_infix_expression(op, left_val, right_val);
-    }
-    if let Object::String(ref left_val) = left && let Object::String(ref right_val) = right {
-        return eval_string_infix_expression(op, &left_val, &right_val);
-    }
-
-    if left.kind() != right.kind() {
-        return Object::Error { message: format!("type mismatch {} {} {}", left.kind(), op, right.kind()) }
-    }
-
-    return Object::Error { message: format!("unknown operator {} {} {}", left.kind(), op, right.kind()) }
 }
+
+fn eval_vector2_infix_expression(op: String, left: &[f32; 2], right: &[f32; 2]) -> Object {
+    match op.as_str() {
+        "+" => Object::Vector2{ x: left[0] + right[0], y: left[1] + right[1] },
+        "-" => Object::Vector2{ x: left[0] - right[0], y: left[1] - right[1] },
+        "*" => Object::Vector2{ x: left[0] * right[0], y: left[1] * right[1] },
+        "/" => Object::Vector2{ x: left[0] / right[0], y: left[1] / right[1] },
+        "==" => boolean_to_obj(left[0] == right[0] && left[1] == right[1]),
+        "!=" => boolean_to_obj(left[0] != right[0] || left[1] != right[1]),
+        _ => Object::Error { message: format!("unknown operator Integer {} Integer", op) }
+    }
+}
+
 fn eval_string_infix_expression(op: String, left: &str, right: &str) -> Object {
     match op.as_str() {
         "+" => Object::String(left.to_owned() + right),
