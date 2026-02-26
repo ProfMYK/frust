@@ -17,6 +17,8 @@ pub struct Parser {
 
 enum Precedence {
     Lowest = 1,  
+    Assign,
+    AndOr,
     Equals,      
     LessGreater, 
     Sum,         
@@ -24,20 +26,27 @@ enum Precedence {
     Prefix,      
     Call,       
     Index,       
+    Member,       
 }
 
 fn get_precedence(ttype: TokenType) -> Precedence {
     match ttype {
+        TokenType::ASSIGN => return Precedence::Assign,
+        TokenType::ADDASSIGN => return Precedence::Assign,
+        TokenType::SUBASSIGN => return Precedence::Assign,
         TokenType::EQ => return Precedence::Equals,
         TokenType::NOTEQ => return Precedence::Equals,
         TokenType::LT => return Precedence::LessGreater,
         TokenType::RT => return Precedence::LessGreater,
+        TokenType::AND => return Precedence::AndOr,
+        TokenType::OR => return Precedence::AndOr,
         TokenType::PLUS => return Precedence::Sum,
         TokenType::MINUS => return Precedence::Sum,
         TokenType::ASTERISK => return Precedence::Product,
         TokenType::SLASH => return Precedence::Product,
         TokenType::LPAREN => return Precedence::Call,
         TokenType::LBRACKET => return Precedence::Index,
+        TokenType::DOT => return Precedence::Member,
         _ => Precedence::Lowest,
     }
 }
@@ -55,6 +64,9 @@ impl Parser {
         p.next_token();
 
         p.register_prefix(TokenType::IDENTIFIER, Parser::parse_identifier);
+        // p.register_prefix(TokenType::STRUCT, Parser::parse_struct_literal);
+        p.register_prefix(TokenType::NEW, Parser::parse_new_struct_statement);
+        p.register_prefix(TokenType::REF, Parser::parse_ref_statement);
         p.register_prefix(TokenType::INT, Parser::parse_integer_literal);
         p.register_prefix(TokenType::FLOAT, Parser::parse_float_literal);
         p.register_prefix(TokenType::BANG, Parser::parse_prefix_expression);
@@ -73,11 +85,17 @@ impl Parser {
         p.register_infix(TokenType::NOTEQ, Parser::parse_infix_expression); 
         p.register_infix(TokenType::LT, Parser::parse_infix_expression); 
         p.register_infix(TokenType::RT, Parser::parse_infix_expression); 
+        p.register_infix(TokenType::AND, Parser::parse_infix_expression); 
+        p.register_infix(TokenType::OR, Parser::parse_infix_expression); 
         p.register_infix(TokenType::PLUS, Parser::parse_infix_expression); 
         p.register_infix(TokenType::MINUS, Parser::parse_infix_expression); 
         p.register_infix(TokenType::ASTERISK, Parser::parse_infix_expression); 
         p.register_infix(TokenType::SLASH, Parser::parse_infix_expression); 
         p.register_infix(TokenType::LPAREN, Parser::parse_call_expression); 
+        p.register_infix(TokenType::DOT, Parser::parse_member_access_expression); 
+        p.register_infix(TokenType::ASSIGN, Parser::parse_assign_statment); 
+        p.register_infix(TokenType::ADDASSIGN, Parser::parse_assign_statment); 
+        p.register_infix(TokenType::SUBASSIGN, Parser::parse_assign_statment); 
         p.register_infix(TokenType::LBRACKET, Parser::parse_index_expression); 
 
         p
@@ -106,10 +124,27 @@ impl Parser {
         match self.cur_token.ttype {
             TokenType::LET => return self.parse_let_statement(),
             TokenType::RETURN => return self.parse_return_statement(),
-            TokenType::IDENTIFIER => return self.parse_assign_statment(),
+            TokenType::STRUCT => return self.parse_struct_statement(),
             _ => return self.parse_expression_statement()
         }
     }
+
+    pub fn parse_struct_statement(&mut self) -> Option<Node> {
+        self.next_token();
+
+        let name = Node::Identifier { value: self.cur_token.literal.clone() };
+
+        if self.expect_peak(TokenType::LBRACE) {
+            let fields = self.parse_expression_list(TokenType::RBRACE);
+            
+            self.next_token();
+
+            return Some(Node::StructDefinition { name: Box::new(name), fields });
+        }
+
+        None
+    }
+
 
     pub fn parse_expression_statement(&mut self) -> Option<Node> {
         let expression = self.parse_expression(Precedence::Lowest as i32);
@@ -156,24 +191,11 @@ impl Parser {
         Some(Node::ReturnStatement { return_value })
     }
 
-    pub fn parse_assign_statment(&mut self) -> Option<Node> {
-        let name = self.parse_expression(Precedence::Lowest as i32).unwrap();
-
-        if self.peak_token.ttype != TokenType::ASSIGN && 
-            self.peak_token.ttype != TokenType::ADDASSIGN && 
-                self.peak_token.ttype != TokenType::SUBASSIGN {
-                    self.next_token();
-                    return Some(*name.to_owned());
-        }
-
-        self.next_token();
-        let op = self.cur_token.literal.clone();
-        self.next_token();
-
-        let value = self.parse_expression(Precedence::Lowest as i32);
-        self.next_token();
-
-        Some(Node::AssignStatement { name , operator: op, value })
+    pub fn parse_assign_statment(parser: &mut Parser, left: Option<Box<Node>>) -> Option<Box<Node>> {
+        let op = parser.cur_token.literal.clone();
+        parser.next_token();
+        let value = parser.parse_expression(Precedence::Lowest as i32);
+        Some(Box::new(Node::AssignStatement { left: left.unwrap() , operator: op, value }))
     }
 
     pub fn parse_let_statement(&mut self) -> Option<Node> {
@@ -237,6 +259,42 @@ impl Parser {
     pub fn parse_identifier(parser: &mut Parser) -> Option<Box<Node>> {
         let token = parser.cur_token.clone();
         Some(Box::new(Node::Identifier { value: token.literal }))
+    }
+
+    pub fn parse_ref_statement(parser: &mut Parser) -> Option<Box<Node>> {
+        parser.next_token();
+        let exp = *parser.parse_expression(Precedence::Lowest as i32).unwrap();
+
+        Some(Box::new(Node::RefStatement { value: Box::new(exp) }))
+    }
+
+    pub fn parse_new_struct_statement(parser: &mut Parser) -> Option<Box<Node>> {
+        parser.next_token();
+        let name = Node::Identifier { value: parser.cur_token.literal.clone() };
+
+        let mut fields: HashMap<String, Node> = HashMap::new();
+        if parser.expect_peak(TokenType::LBRACE) {
+            parser.next_token();
+            let key = parser.cur_token.literal.clone();
+            parser.next_token();
+            parser.next_token();
+            let exp = *parser.parse_expression(Precedence::Lowest as i32).unwrap();
+            fields.insert(key, exp);
+
+            while parser.peak_token.ttype == TokenType::COMMA {
+                parser.next_token();
+                parser.next_token();
+                let key = parser.cur_token.literal.clone();
+                parser.next_token();
+                parser.next_token();
+                let exp = *parser.parse_expression(Precedence::Lowest as i32).unwrap();
+                fields.insert(key, exp);
+            }
+
+            parser.next_token();
+        }
+
+        Some(Box::new(Node::StructLiteral { name: Box::new(name), pairs: fields }))
     }
 
     pub fn parse_integer_literal(parser: &mut Parser) -> Option<Box<Node>> {
@@ -394,6 +452,9 @@ impl Parser {
     }
 
     pub fn parse_function_literal(parser: &mut Parser) -> Option<Box<Node>> {
+        parser.next_token();
+        let name = Node::Identifier { value: parser.cur_token.literal.clone() };
+
         if !parser.expect_peak(TokenType::LPAREN) {
             return None;
         }
@@ -406,7 +467,7 @@ impl Parser {
 
         let body = parser.parse_block_statement();
 
-        Some(Box::new(Node::FunctionLiteral { parameters, body }))
+        Some(Box::new(Node::FunctionLiteral { name: Box::new(name), parameters, body }))
     }
 
     pub fn parse_string_literal(parser: &mut Parser) -> Option<Box<Node>> {
@@ -458,6 +519,11 @@ impl Parser {
         let arguments = parser.parse_expression_list(TokenType::RPAREN);
         Some(Box::new(Node::CallExpression { function: left, arguments }))
     }        
+
+    pub fn parse_member_access_expression(parser: &mut Parser, left: Option<Box<Node>>) -> Option<Box<Node>> {
+        parser.next_token();
+        Some(Box::new(Node::MemberAccess { left: left.unwrap(), property: parser.cur_token.literal.clone() }))
+    }
 
     pub fn parse_index_expression(parser: &mut Parser, left: Option<Box<Node>>) -> Option<Box<Node>> {
         parser.next_token();

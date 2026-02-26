@@ -1,10 +1,10 @@
-use std::fmt::{self};
+use std::{collections::HashMap, fmt::{self}};
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub enum Node {
     BlockStatement {statements: Vec<Node>},
     Identifier {value: String},
-    FunctionLiteral {parameters: Vec<Node>, body: Option<Box<Node>>},
+    FunctionLiteral {name: Box<Node>, parameters: Vec<Node>, body: Option<Box<Node>>},
     CallExpression {function: Option<Box<Node>>, arguments: Vec<Node>},
     IntegerLiteral {value: i32},
     FloatLiteral {value: f32},
@@ -19,8 +19,12 @@ pub enum Node {
     BreakStatement,
     ExpressionStatement {expression: Option<Box<Node>>},
     LetStatement {name: Box<Node>, value: Option<Box<Node>>},
-    AssignStatement {name: Box<Node>, operator: String, value: Option<Box<Node>>},
+    RefStatement {value: Box<Node>},
+    AssignStatement {left: Box<Node>, operator: String, value: Option<Box<Node>>},
     ReturnStatement {return_value: Option<Box<Node>>},
+    StructDefinition { name: Box<Node>, fields: Vec<Node> },
+    StructLiteral { name: Box<Node>, pairs: HashMap<String, Node> },
+    MemberAccess {left: Box<Node>, property: String },
     Program {statements: Vec<Node>}
 }
 
@@ -47,10 +51,9 @@ impl fmt::Display for Node {
 
                 write!(f, "{msg})\n")
             },
-            Node::FunctionLiteral { parameters, body } => {
-                // let mut msg = format!("fun(");
+            Node::FunctionLiteral { name, parameters, body } => {
                 let pars = parameters.iter().map(|p| format!("{p}")).collect::<Vec<_>>().join(", ");
-                let msg = format!("(Function Literal: ({pars})\n");
+                let msg = format!("(Function Literal ({name}): ({pars})\n");
                 let block = indent(&format!("{}", body.clone().unwrap()));
                 write!(f, "{msg}{}\n)", block)
             }
@@ -91,7 +94,8 @@ impl fmt::Display for Node {
                 return write!(f, "");
             }
             Node::LetStatement { name, value } => write!(f, "let {name} = {};", value.clone().unwrap()),
-            Node::AssignStatement { name, operator, value } => write!(f, "{name} {operator} {};", value.clone().unwrap()),
+            Node::RefStatement { value } => write!(f, "ref {value};"),
+            Node::AssignStatement { left, operator, value } => write!(f, "(Assign Statement {left} {operator} {})", value.clone().unwrap()),
             Node::ReturnStatement { return_value } => write!(f, "return {};", return_value.clone().unwrap()),
             Node::Program { statements } => {
                 let mut msg = format!("(Program\n");
@@ -110,6 +114,17 @@ impl fmt::Display for Node {
             }
             Node::IndexExpression { left, right } => {
                 write!(f, "(Index Expression: {}[{}])", left.clone().unwrap(), right.clone().unwrap())
+            }
+            Node::StructDefinition { name, fields } => {
+                let args = indent(&fields.iter().map(|p| format!("{p}")).collect::<Vec<_>>().join(", "));
+                write!(f, "(Struct Definition: struct {} {{ {} }})", *name, args)
+            }
+            Node::StructLiteral { name, pairs } => {
+                let args = indent(&pairs.iter().map(|(k, v)| format!("{k}: {v}")).collect::<Vec<_>>().join(", "));
+                write!(f, "(Struct Literal: {} {{ {} }})", *name, args)
+            }
+            Node::MemberAccess { left, property } => {
+                write!(f, "(Member Access: {}.{})", *left, *property)
             }
         }
     }

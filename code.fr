@@ -1,11 +1,142 @@
-let width = 800.0;
-let height = 600.0;
-init(as_integer(width), as_integer(height), "GAME");
+struct Vector2 { x, y };
+struct Point {position, prevPosition, locked};
+struct Stick {pointA, pointB, length};
 
-let player = vec2(width / 2.0, height / 2.0);
-let player_color = color(240, 50, 50);
+fun draw_point(point) {
+  let col = color(200, 200, 200);
+  if (point.locked) {
+    col = color(200, 50, 50);
+  }
+
+  circle(to_vec2(point.position), 10.0, col);
+}
+
+fun stick_length(pointA, pointB) {
+  let pA = pointA.position;
+  let pB = pointB.position;
+  return length_vector2(sub_vector2(pA, pB));
+}
+
+fun draw_stick(points, stick) {
+  let pA = to_vec2(points[stick.pointA].position);
+  let pB = to_vec2(points[stick.pointB].position);
+
+  line(pA, pB, 5.0, color(180, 180, 180));
+}
+
+fun add_vector2(vecA, vecB) {
+  return new Vector2 { x: vecA.x + vecB.x, y: vecA.y + vecB.y };
+}
+
+fun sub_vector2(vecA, vecB) {
+  return new Vector2 { x: vecA.x - vecB.x, y: vecA.y - vecB.y };
+}
+
+fun scale_vector2(vec, factor) {
+  return new Vector2 { x: vec.x * factor, y: vec.y * factor };
+}
+
+fun length_vector2(vec) {
+  return sqrt(vec.x * vec.x + vec.y * vec.y);
+}
+
+fun normalize_vector2(vec) {
+  let l = length_vector2(vec);
+  return new Vector2 { x: vec.x / l, y: vec.y / l };
+}
+
+fun to_vec2(vec) {
+  return vec2(vec.x, vec.y);
+}
+
+let y = 400.0;
+let points = [
+  new Point {position: new Vector2 {x: 400.0, y: y}, prevPosition: new Vector2 {x: 400.0, y: y}, locked: true},
+  new Point {position: new Vector2 {x: 450.0, y: y}, prevPosition: new Vector2 {x: 450.0, y: y} ,locked: false},
+  new Point {position: new Vector2 {x: 500.0, y: y}, prevPosition: new Vector2 {x: 500.0, y: y} ,locked: false},
+  new Point {position: new Vector2 {x: 550.0, y: y}, prevPosition: new Vector2 {x: 550.0, y: y} ,locked: false},
+  new Point {position: new Vector2 {x: 600.0, y: y}, prevPosition: new Vector2 {x: 600.0, y: y} ,locked: false},
+  new Point {position: new Vector2 {x: 650.0, y: y}, prevPosition: new Vector2 {x: 650.0, y: y} ,locked: false},
+  new Point {position: new Vector2 {x: 700.0, y: y - 50.0},  prevPosition: new Vector2 {x: 700.0, y: y - 50.0} ,locked: false},
+  new Point {position: new Vector2 {x: 700.0, y: y + 50.0}, prevPosition: new Vector2 {x: 700.0, y: y + 50.0} ,locked: false},
+  new Point {position: new Vector2 {x: 750.0, y: y}, prevPosition: new Vector2 {x: 750.0, y: y} ,locked: false}
+];
+
+let sticks = [
+  new Stick {pointA: ref points[0], pointB: ref points[1], length: stick_length(points[0], points[1])},
+  new Stick {pointA: ref points[1], pointB: ref points[2], length: stick_length(points[1], points[2])},
+  new Stick {pointA: ref points[2], pointB: ref points[3], length: stick_length(points[2], points[3])},
+  new Stick {pointA: ref points[3], pointB: ref points[4], length: stick_length(points[3], points[4])},
+  new Stick {pointA: ref points[4], pointB: ref points[5], length: stick_length(points[4], points[5])},
+  new Stick {pointA: ref points[5], pointB: ref points[6], length: stick_length(points[5], points[6])},
+  new Stick {pointA: ref points[5], pointB: ref points[7], length: stick_length(points[5], points[7])},
+  new Stick {pointA: ref points[6], pointB: ref points[7], length: stick_length(points[6], points[7])},
+  new Stick {pointA: ref points[6], pointB: ref points[8], length: stick_length(points[6], points[8])},
+  new Stick {pointA: ref points[7], pointB: ref points[8], length: stick_length(points[7], points[8])}
+];
+
+init(800, 800, "Hello, World");
+
+let down = new Vector2 { x: 0.0, y: 1.0 };
+let gravity = 9.81 * 100;
+
+let t = 0.0;
 
 while (!should_close()) {
+  t += dt();
+
+  if (t > 5.0) {
+    if (down.y > 0.0) {
+      down = new Vector2 { x: 0.0, y: -1.0 };
+    } else {
+      down = new Vector2 { x: 0.0, y: 1.0 };
+    }
+    t = 0.0;
+  }
+
+  let i = 0;
+  while (i < len(points)) {
+    if (!points[i].locked) {
+      let point = ref points[i];
+      let positionBefore = point.position;
+      point.position = add_vector2(point.position, sub_vector2(point.position, point.prevPosition))
+      point.position = add_vector2(point.position, scale_vector2(down, gravity * dt() * dt()));
+      point.prevPosition = positionBefore;
+    }
+    i += 1;
+  }
+
+  let i = 0;
+  let j = 0;
+  while (j < 10) {
+    while (i < len(sticks)) {
+      let stick = ref sticks[i];
+      let stick_center = scale_vector2(add_vector2(stick.pointA.position, stick.pointB.position), 0.5);
+      let stick_dir = normalize_vector2(sub_vector2(stick.pointA.position, stick.pointB.position));
+      if (!pointA.locked) {
+        stikc.pointA.position = add_vector2(stick_center, scale_vector2(stick_dir, stick.length / 2.0));
+      }
+      if (!points[sticks[i].pointB].locked) {
+        stick.pointB.position = sub_vector2(stick_center, scale_vector2(stick_dir, stick.length / 2.0));
+      }
+      i += 1;
+    }
+    j += 1
+  }
+
   clear(color(18, 18, 18));
-  circle(player, 16.0, player_color);
+
+  let i = 0;
+  while (i < len(sticks)) {
+    draw_stick(points, sticks[i]);
+    i += 1;
+  }
+
+  i = 0;
+  while (i < len(points)) {
+    draw_point(points[i]);
+    i += 1;
+  }
+
+  render();
 }

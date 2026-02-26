@@ -27,12 +27,17 @@ pub enum TokenType {
     EQ,        // ==
     NOTEQ,     // !=
 
+    AND,       // &&
+    OR,        // ||
+
     ADDASSIGN,     // +=
     SUBASSIGN,     // -=
 
     // Delimeters
     COMMA,     // ,
+    DOT,       // ,
     SEMICOLON, // ;
+    TWODOTS,   // :
 
     LPAREN,    // (
     RPAREN,    // )
@@ -44,6 +49,9 @@ pub enum TokenType {
     // Keywords
     FUNCTION,  // fun
     LET,       // let
+    REF,       // ref
+    NEW,       // new
+    STRUCT,    // struct
     TRUE,      // true
     FALSE,     // false
     WHILE,     // while
@@ -151,6 +159,24 @@ impl Lexer {
                     token = Token::new(TokenType::PLUS, (self.ch as char).to_string());
                 }
             },
+            b'&' => {
+                if self.peak_char() == b'&' {
+                    let ch = self.ch;
+                    self.read_char();
+                    token = Token::new(TokenType::AND, (ch as char).to_string() + &(self.ch as char).to_string());
+                } else {
+                    token = Token::new(TokenType::ILLEGAL, (self.ch as char).to_string());
+                }
+            },
+            b'|' => {
+                if self.peak_char() == b'|' {
+                    let ch = self.ch;
+                    self.read_char();
+                    token = Token::new(TokenType::OR, (ch as char).to_string() + &(self.ch as char).to_string());
+                } else {
+                    token = Token::new(TokenType::ILLEGAL, (self.ch as char).to_string());
+                }
+            },
             b'-' => {
                 if self.peak_char() == b'=' {
                     let ch = self.ch;
@@ -175,12 +201,14 @@ impl Lexer {
             b'>' => token = Token::new(TokenType::RT, (self.ch as char).to_string()),
             b';' => token = Token::new(TokenType::SEMICOLON, (self.ch as char).to_string()),
             b',' => token = Token::new(TokenType::COMMA, (self.ch as char).to_string()),
+            b'.' => token = Token::new(TokenType::DOT, (self.ch as char).to_string()),
             b'(' => token = Token::new(TokenType::LPAREN, (self.ch as char).to_string()),
             b')' => token = Token::new(TokenType::RPAREN, (self.ch as char).to_string()),
             b'{' => token = Token::new(TokenType::LBRACE, (self.ch as char).to_string()),
             b'}' => token = Token::new(TokenType::RBRACE, (self.ch as char).to_string()),
             b'[' => token = Token::new(TokenType::LBRACKET, (self.ch as char).to_string()),
             b']' => token = Token::new(TokenType::RBRACKET, (self.ch as char).to_string()),
+            b':' => token = Token::new(TokenType::TWODOTS, (self.ch as char).to_string()),
             b'"' => token = Token::new(TokenType::STRING, self.read_string()),
             0 => token = Token::new(TokenType::EOF, "".to_string()),
             ch if ch.is_ascii_alphabetic() || ch == b'_' => {
@@ -262,12 +290,15 @@ impl Lexer {
             s if s == "fun".to_string() => return TokenType::FUNCTION,
             s if s == "break".to_string() => return TokenType::BREAK,
             s if s == "let".to_string() => return TokenType::LET,
+            s if s == "ref".to_string() => return TokenType::REF,
+            s if s == "new".to_string() => return TokenType::NEW,
             s if s == "true".to_string() => return TokenType::TRUE,
             s if s == "false".to_string() => return TokenType::FALSE,
             s if s == "while".to_string() => return TokenType::WHILE,
             s if s == "if".to_string() => return TokenType::IF,
             s if s == "else".to_string() => return TokenType::ELSE,
             s if s == "return".to_string() => return TokenType::RETURN,
+            s if s == "struct".to_string() => return TokenType::STRUCT,
             _ => return TokenType::IDENTIFIER
         }
     }

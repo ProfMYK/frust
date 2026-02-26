@@ -3,9 +3,9 @@ use std::{cell::RefCell, collections::HashMap, fmt, rc::Rc};
 use raylib::prelude::*;
 
 use crate::ast::{Node, indent};
-use crate::graphics::*;
+use crate::{evaluator, graphics::*};
 
-#[derive(PartialEq, Clone)]
+#[derive(Clone)]
 pub enum Object {
     Integer(i32),
     Float(f32),
@@ -14,9 +14,12 @@ pub enum Object {
     Color(Color),
     Vector2 {x: f32, y: f32},
     Array {elements: Vec<Object>},
+    StructMeta { name: String, expected_fields: Vec<String> },
+    StructInstance { name: String, fields: HashMap<String, Object> },
     Function {parameters: Vec<Node>, body: Node, env: EnvRef},
-    Builtin(BuiltinFunction),
+    BuiltinFunction(BuiltinFunction),
     ReturnValue {value: Box<Object>},
+    Reference {root: String, path: Vec<AccessStep>},
     Error {message: String},
     Null,
 }
@@ -34,10 +37,19 @@ impl fmt::Display for Object {
                 let elems = elements.iter().map(|p| format!("{p}")).collect::<Vec<_>>().join(", ");
                 write!(f, "[{}]", elems)
             },
-            Object::Builtin(_) => write!(f, "Builtin Function"),
+            Object::StructMeta { name, expected_fields } => {
+                let elems = expected_fields.iter().map(|p| format!("{p}")).collect::<Vec<_>>().join(", ");
+                write!(f, "{name} = {{{}}}", elems)
+            },
+            Object::StructInstance { name, fields } => {
+                let elems = fields.iter().map(|(k, v)| format!("{k}: {v}")).collect::<Vec<_>>().join(", ");
+                write!(f, "{name} {{{}}}", elems)
+            },
+            Object::BuiltinFunction(_) => write!(f, "Builtin Function"),
             Object::Null => Ok(()),
             Object::Error { message } => write!(f, "ERROR: {}", message),
             Object::ReturnValue { value } => write!(f, "RETURN: {}", value),
+            Object::Reference { root, .. } => write!(f, "Reference: {root}", ),
             Object::Function { parameters, body, env: _ } => {
                 let pars = parameters.iter().map(|p| format!("{p}")).collect::<Vec<_>>().join(", ");
                 let msg = format!("(Function Literal: ({pars})\n");
@@ -58,8 +70,11 @@ impl Object {
             Object::Vector2{..} => "Vector2",
             Object::Color(_) => "Color",
             Object::Array {..} => "Array",
-            Object::Builtin(_) => "Builtin Function",
+            Object::StructMeta {..} => "Struct Meta",
+            Object::StructInstance {..} => "Struct Instance",
+            Object::BuiltinFunction(_) => "Builtin Function",
             Object::ReturnValue{..} => "Return Value",
+            Object::Reference{..} => "Reference",
             Object::Null => "Null",
             Object::Error {..} => "Error",
             Object::Function {..} => "Function",
@@ -67,13 +82,17 @@ impl Object {
     }
 }
 
-type BuiltinFunction = fn(Vec<Object>, env: EnvRef) -> Object;
-
 pub const TRUE: Object = Object::Boolean(true);
 pub const FALSE: Object = Object::Boolean(false);
 pub const NULL: Object = Object::Null;
 
-#[derive(PartialEq, Clone)]
+#[derive(Clone)]
+pub enum AccessStep {
+    Property(String),
+    Index(usize),
+}
+
+#[derive(Clone)]
 pub struct Environmet {
     pub store: HashMap<String, Object>,
     pub outer: Option<EnvRef>,
@@ -81,6 +100,7 @@ pub struct Environmet {
 }
 
 pub type EnvRef = Rc<RefCell<Environmet>>;
+type BuiltinFunction = fn(Vec<Object>, env: EnvRef) -> Object;
 
 impl Environmet {
     pub fn new() -> EnvRef {
@@ -140,6 +160,41 @@ pub fn boolean_to_obj(b: bool) -> Object {
         TRUE
     } else {
         FALSE
+    }
+}
+
+pub fn flatten_access_path(node: Node, env: EnvRef) -> Result<(String, Vec<AccessStep>), Object> {
+    match node.clone() {
+        Node::Identifier { value } => {
+            if let Some(obj) = env.borrow().get(&value) {
+                if let Object::Reference { root, path } = obj {
+                    return Ok((root, path));
+                }
+            }
+
+            Ok((value, Vec::new()))
+        }
+        Node::MemberAccess { left, property } => {
+            let (root_path, mut path) = flatten_access_path(*left, env)?;
+            path.push(AccessStep::Property(property));
+            Ok((root_path, path))
+        }
+        Node::IndexExpression { left, right } => {
+            let (root, mut path) = flatten_access_path(*left.unwrap(), env.clone())?;
+
+            let index_val = evaluator::eval(*right.unwrap(), env);
+
+            if let Object::Integer(idx) = index_val {
+                if idx < 0 {
+                    return Err(Object::Error { message: "Index cannot be negative".to_string() });
+                }
+                path.push(AccessStep::Index(idx as usize));
+                Ok((root, path))
+            } else {
+                Err(Object::Error { message: "Array index must be an integer".to_string() })
+            }
+        }
+        _ => Err(Object::Error { message: format!("invalid assign target") })
     }
 }
 
@@ -247,25 +302,45 @@ pub fn builtin_type(args: Vec<Object>, _env: EnvRef) -> Object {
     Object::String(args[0].kind().to_string())
 }
 
+pub fn builtin_sqrt(args: Vec<Object>, _env: EnvRef) -> Object {
+    if args.len() != 1 {
+        return Object::Error { message: format!("requires 1 argument, got: {}", args.len()) };
+    }
+
+    match &args[0] {
+        Object::Float(val) => Object::Float(val.sqrt()),
+        _ => Object::Error { message: format!("expected Float got {}", args[0].kind()) },
+    }
+}
+
 pub fn get_builtin(name: &str) -> Option<Object> {
     match name {
-        "len" => Some(Object::Builtin(builtin_len)),
-        "sorted" => Some(Object::Builtin(builtin_sorted)),
-        "pushed" => Some(Object::Builtin(builtin_pushed)),
-        "print" => Some(Object::Builtin(builtin_print)),
-        "println" => Some(Object::Builtin(builtin_println)),
-        "as_float" => Some(Object::Builtin(builtin_as_float)),
-        "as_integer" => Some(Object::Builtin(builtin_as_integer)),
-        "type" => Some(Object::Builtin(builtin_type)),
-        "init" => Some(Object::Builtin(builtin_init_window)),
-        "circle" => Some(Object::Builtin(builtin_circle)),
-        "color" => Some(Object::Builtin(builtin_color)),
-        "vec2" => Some(Object::Builtin(builtin_vec2)),
-        "dot" => Some(Object::Builtin(builtin_dot)),
-        "pixel" => Some(Object::Builtin(builtin_pixel)),
-        "rectangle" => Some(Object::Builtin(builtin_rectangle)),
-        "clear" => Some(Object::Builtin(builtin_clear)),
-        "should_close" => Some(Object::Builtin(builtin_should_close)),
+        "len" => Some(Object::BuiltinFunction(builtin_len)),
+        "sorted" => Some(Object::BuiltinFunction(builtin_sorted)),
+        "pushed" => Some(Object::BuiltinFunction(builtin_pushed)),
+        "print" => Some(Object::BuiltinFunction(builtin_print)),
+        "println" => Some(Object::BuiltinFunction(builtin_println)),
+        "as_float" => Some(Object::BuiltinFunction(builtin_as_float)),
+        "sqrt" => Some(Object::BuiltinFunction(builtin_sqrt)),
+        "as_integer" => Some(Object::BuiltinFunction(builtin_as_integer)),
+        "type" => Some(Object::BuiltinFunction(builtin_type)),
+        "init" => Some(Object::BuiltinFunction(builtin_init_window)),
+        "circle" => Some(Object::BuiltinFunction(builtin_circle)),
+        "line" => Some(Object::BuiltinFunction(builtin_line)),
+        "render" => Some(Object::BuiltinFunction(builtin_render_frames)),
+        "dt" => Some(Object::BuiltinFunction(builtin_dt)),
+        "time" => Some(Object::BuiltinFunction(builtin_time)),
+        "color" => Some(Object::BuiltinFunction(builtin_color)),
+        "vec2" => Some(Object::BuiltinFunction(builtin_vec2)),
+        "dot" => Some(Object::BuiltinFunction(builtin_dot)),
+        "pixel" => Some(Object::BuiltinFunction(builtin_pixel)),
+        "rectangle" => Some(Object::BuiltinFunction(builtin_rectangle)),
+        "clear" => Some(Object::BuiltinFunction(builtin_clear)),
+        "should_close" => Some(Object::BuiltinFunction(builtin_should_close)),
+        "Vector2" => Some(Object::StructMeta { 
+            name: "Vector2".to_string(), 
+            expected_fields: vec!["x".to_string(), "y".to_string()] 
+        }),
         _ => None,
     }
 }

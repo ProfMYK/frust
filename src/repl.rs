@@ -34,6 +34,10 @@ pub fn start() {
                 }
             },
             _ => {
+                // let mut test_lexer = Lexer::new(command.to_string());
+                // for token in test_lexer._get_tokens() {
+                //     println!("{}", token);
+                // }
                 let lexer = Lexer::new(command.to_string());
                 let mut parser = Parser::new(lexer);
 

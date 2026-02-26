@@ -21,6 +21,7 @@ pub enum DrawCommands {
     Clear(Color),
     Circle { position: Vector2, radius: f32, color: Color },
     Rectangle { position: Vector2, size: Vector2, color: Color },
+    Line { pos1: Vector2, pos2: Vector2, thickness: f32, color: Color },
     Pixel { position: Vector2, color: Color},
 }
 
@@ -36,9 +37,10 @@ pub fn builtin_init_window(args: Vec<Object>, env: EnvRef) -> Object {
         let (mut rl, thread) = raylib::init()
             .size(width, height)
             .title(&title)
+            .log_level(TraceLogLevel::LOG_NONE)
+            .msaa_4x()
             .build();
 
-        rl.set_trace_log(TraceLogLevel::LOG_NONE);
         rl.set_target_fps(60);
 
         let mut env_ref = env.borrow_mut();
@@ -62,7 +64,7 @@ pub fn builtin_should_close(args: Vec<Object>, env: EnvRef) -> Object {
         return Object::Error { message: format!("wrong number of arguments. got: {}, want: 0\n\t USAGE: should_close();", args.len()) };
     }
 
-    if let Some(handle) = &env.borrow().window_handle {
+    if let Some(handle) = &env.borrow().get_window_handle() {
         return boolean_to_obj(handle.rl.borrow().window_should_close());
     }
 
@@ -76,7 +78,7 @@ pub fn builtin_circle(args: Vec<Object>, env: EnvRef) -> Object {
     
     match (&args[0], &args[1], &args[2]) {
         (Object::Vector2 { x, y }, Object::Float(radius), Object::Color(color)) => {
-             if let Some(handle) = &env.borrow().window_handle {
+             if let Some(handle) = &env.borrow().get_window_handle() {
                 handle.queue.borrow_mut().push(DrawCommands::Circle {
                     position: Vector2::new(*x, *y),
                     radius: *radius, 
@@ -92,6 +94,50 @@ pub fn builtin_circle(args: Vec<Object>, env: EnvRef) -> Object {
     }
 }
 
+pub fn builtin_dt(args: Vec<Object>, env: EnvRef) -> Object {
+    if args.len() != 0 {
+        return Object::Error { message: format!("wrong number of arguments. got: {}, want: 0\n\t USAGE: dt();", args.len()) };
+    }
+    if let Some(handle) = &env.borrow().get_window_handle() {
+        return Object::Float(handle.rl.borrow().get_frame_time())
+    }
+    return Object::Error { message: format!("window not initilized!") };
+}
+
+pub fn builtin_time(args: Vec<Object>, env: EnvRef) -> Object {
+    if args.len() != 0 {
+        return Object::Error { message: format!("wrong number of arguments. got: {}, want: 0\n\t USAGE: time();", args.len()) };
+    }
+    if let Some(handle) = &env.borrow().get_window_handle() {
+        return Object::Float(handle.rl.borrow().get_time() as f32)
+    }
+    return Object::Error { message: format!("window not initilized!") };
+}
+
+pub fn builtin_line(args: Vec<Object>, env: EnvRef) -> Object {
+    if args.len() != 4 {
+        return Object::Error { message: format!("wrong number of arguments. got: {}, want: 4\n\t USAGE: line(position1, position2, thickness, color);", args.len()) };
+    }
+    
+    match (&args[0], &args[1], &args[2], &args[3]) {
+        (Object::Vector2 { x: pos_x, y: pos_y }, Object::Vector2 { x: pos1_x, y: pos1_y }, Object::Float(thickness), Object::Color(color)) => {
+             if let Some(handle) = &env.borrow().get_window_handle() {
+                handle.queue.borrow_mut().push(DrawCommands::Line {
+                    pos1: Vector2::new(*pos_x, *pos_y),
+                    pos2: Vector2::new(*pos1_x, *pos1_y),
+                    thickness: *thickness, 
+                    color: *color,
+                });
+             }
+             return NULL;
+        },
+        _ => Object::Error { 
+            message: format!("Argument type mismatch. Expected circle(Vector2, Vector2, Float, Color), got ({}, {}, {}, {})", 
+                         args[0].kind(), args[1].kind(), args[2].kind(), args[3].kind()) 
+        }
+    }
+}
+
 pub fn builtin_rectangle(args: Vec<Object>, env: EnvRef) -> Object {
     if args.len() != 3 {
         return Object::Error { message: format!("wrong number of arguments. got: {}, want: 3\n\t USAGE: rectangle(position, size, color);", args.len()) };
@@ -99,7 +145,7 @@ pub fn builtin_rectangle(args: Vec<Object>, env: EnvRef) -> Object {
     
     match (&args[0], &args[1], &args[2]) {
         (Object::Vector2 { x: pos_x, y: pos_y }, Object::Vector2 { x: size_x, y: size_y }, Object::Color(color)) => {
-             if let Some(handle) = &env.borrow().window_handle {
+             if let Some(handle) = &env.borrow().get_window_handle() {
                 handle.queue.borrow_mut().push(DrawCommands::Rectangle {
                     position: Vector2::new(*pos_x, *pos_y),
                     size: Vector2::new(*size_x, *size_y),
@@ -182,7 +228,7 @@ pub fn builtin_clear(args: Vec<Object>, env: EnvRef) -> Object {
     
     match &args[0] {
         Object::Color(color) => {
-            if let Some(handle) = &env.borrow().window_handle {
+            if let Some(handle) = &env.borrow().get_window_handle() {
                 handle.queue.borrow_mut().push(DrawCommands::Clear(color.clone()));
             }
             NULL
@@ -193,12 +239,16 @@ pub fn builtin_clear(args: Vec<Object>, env: EnvRef) -> Object {
     }
 }
 
-pub fn flush_graphics(env: EnvRef) {
+pub fn builtin_render_frames(args: Vec<Object>, env: EnvRef) -> Object {
+    if args.len() != 0 {
+        return Object::Error { message: format!("wrong number of arguments. got: {}, want: 0\n\t USAGE: render_frames();", args.len()) };
+    }
+
     let env_borrow = env.borrow();
-    if let Some(handle) = &env_borrow.window_handle {
+    if let Some(handle) = &env_borrow.get_window_handle() {
         let mut rl = handle.rl.borrow_mut();
         let mut queue = handle.queue.borrow_mut();
-        if queue.is_empty() { return; }
+        if queue.is_empty() { return NULL; }
         let mut d = rl.begin_drawing(&handle.thread);
 
         for cmd in queue.iter() {
@@ -206,11 +256,14 @@ pub fn flush_graphics(env: EnvRef) {
                 DrawCommands::Clear(color) => d.clear_background(*color),
                 DrawCommands::Circle { position, radius, color } => d.draw_circle_v(position, *radius, color),
                 DrawCommands::Rectangle { position, size, color } => d.draw_rectangle_v(position, size, color),
+                DrawCommands::Line { pos1, pos2, thickness, color } => d.draw_line_ex(pos1, pos2, *thickness, color),
                 DrawCommands::Pixel { position, color } => d.draw_pixel_v(position, color),
             }
         }
 
         queue.clear();
     }
+
+    NULL
 }
 
